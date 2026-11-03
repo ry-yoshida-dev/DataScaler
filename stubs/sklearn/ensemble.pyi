@@ -1,0 +1,6 @@
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+class IsolationForest:
+    def __init__(self, *, n_estimators: int = 100, random_state: int | None = None) -> None: ...
+    def predict(self, X: ArrayLike) -> NDArray[np.integer]: ...

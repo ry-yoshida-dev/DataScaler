@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import cast
+
+import numpy as np
+from numpy.typing import NDArray
+from sklearn.exceptions import NotFittedError
+from sklearn.pipeline import Pipeline
+
+from .feature_validator import FeatureValidator
+from .scaler_state import ScalerState
+from .scaling_configuration import ScalingConfigurationLike
+from .transformers import TransformerLike
+from .types import FloatArray, NumericArray
+
+
+class Scaler[TransformerT: TransformerLike]:
+    """
+    Applies a scaling strategy with strict input checks.
+
+    Inputs are never modified. Unlike the wrapped estimator, a scaler rejects a
+    changed number of features with a clear error and can be saved without pickle.
+
+    Parameters
+    ----------
+    parameters : ScalingConfigurationLike
+        The configuration this scaler was built from.
+    estimator : TransformerT
+        The wrapped transformer.
+    """
+
+    def __init__(
+        self, parameters: ScalingConfigurationLike, estimator: TransformerT
+    ) -> None:
+        self._parameters: ScalingConfigurationLike = parameters
+        self._estimator: TransformerT = estimator
+        self._n_features: int | None = None
+
+    @property
+    def parameters(self) -> ScalingConfigurationLike:
+        """
+        Get the configuration this scaler was built from.
+
+        Returns
+        -------
+        ScalingConfigurationLike
+            The parameters.
+        """
+        return self._parameters
+
+    @property
+    def n_features(self) -> int:
+        """
+        Get the number of features seen during fitting.
+
+        Returns
+        -------
+        int
+            The number of features.
+
+        Raises
+        ------
+        NotFittedError
+            If the scaler has not been fitted.
+        """
+        if self._n_features is None:
+            raise NotFittedError("Scaler is not fitted yet. Call fit() first.")
+        return self._n_features
+
+    def fit(self, X: NumericArray) -> None:
+        """
+        Learn the statistics of the samples, discarding earlier ones.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix with shape (n_samples, n_features).
+
+        Raises
+        ------
+        TypeError
+            If the features are not numeric.
+        ValueError
+            If the features are not a valid matrix for this strategy.
+        """
+        self._n_features = None
+        self._validate(X)
+        _ = self._estimator.fit(X)
+        self._record_fitted(X)
+
+    def transform(self, X: NumericArray) -> FloatArray:
+        """
+        Scale features with the fitted statistics.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix with shape (n_samples, n_features).
+
+        Returns
+        -------
+        FloatArray
+            The scaled features in a new array.
+
+        Raises
+        ------
+        NotFittedError
+            If the scaler has not been fitted.
+        TypeError
+            If the features are not numeric.
+        ValueError
+            If the features are invalid or their number differs from fitting.
+        """
+        self._validate_fitted_shape(X)
+        return self._to_new_float_array(self._estimator.transform(X), X)
+
+    def fit_transform(self, X: NumericArray) -> FloatArray:
+        """
+        Learn the statistics of the samples and scale them.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix with shape (n_samples, n_features).
+
+        Returns
+        -------
+        FloatArray
+            The scaled features in a new array.
+
+        Raises
+        ------
+        TypeError
+            If the features are not numeric.
+        ValueError
+            If the features are not a valid matrix for this strategy.
+        """
+        self.fit(X)
+        return self.transform(X)
+
+    def to_state(self) -> ScalerState:
+        """
+        Export the configuration and fitted statistics.
+
+        Returns
+        -------
+        ScalerState
+            The state, which ScalerLoader can restore.
+
+        Raises
+        ------
+        NotFittedError
+            If the scaler has not been fitted.
+        """
+        arrays: dict[str, NDArray[np.generic]] = {}
+        for path in self._parameters.state_attributes:
+            value: object = cast(
+                object,
+                getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
+            )
+            if value is not None:
+                arrays[path] = np.asarray(value)
+        return ScalerState(
+            method=type(self._parameters).__name__,
+            parameters=self._parameters.encode(),
+            n_features=self.n_features,
+            arrays=arrays,
+        )
+
+    def restore_state(self, state: ScalerState) -> None:
+        """
+        Load fitted statistics into this scaler.
+
+        Parameters
+        ----------
+        state : ScalerState
+            The state, exported from a scaler with the same parameters.
+        """
+        for path, array in state.arrays.items():
+            # Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
+            value: object = cast(object, array[()])
+            setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], value)
+        self._n_features = state.n_features
+
+    def save(self, path: Path) -> None:
+        """
+        Write the configuration and fitted statistics to a file, without pickle.
+
+        Parameters
+        ----------
+        path : Path
+            The file to write; ScalerLoader reads it back.
+
+        Raises
+        ------
+        NotFittedError
+            If the scaler has not been fitted.
+        """
+        self.to_state().save(path)
+
+    def _record_fitted(self, X: NumericArray) -> None:
+        self._n_features = X.shape[1]
+
+    def _validate(self, X: NumericArray) -> None:
+        FeatureValidator.require_matrix(
+            X, is_nan_allowed=self._parameters.is_nan_allowed
+        )
+
+    def _validate_fitted_shape(self, X: NumericArray) -> None:
+        n_features: int = self.n_features
+        self._validate(X)
+        if X.shape[1] != n_features:
+            raise ValueError(
+                f"X must have {n_features} features as during fit, got {X.shape[1]}"
+            )
+
+    def _resolve_owner(self, path: str) -> object:
+        if "." not in path or not isinstance(self._estimator, Pipeline):
+            return self._estimator
+        return self._estimator.named_steps[path.split(".", 1)[0]]
+
+    @staticmethod
+    def _to_new_float_array(result: FloatArray, X: NumericArray) -> FloatArray:
+        is_floating: bool = np.issubdtype(result.dtype, np.floating)
+        if is_floating and result is not X:
+            return result
+        return np.array(result, dtype=result.dtype if is_floating else np.float64)
