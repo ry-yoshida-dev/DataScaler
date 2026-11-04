@@ -9,6 +9,7 @@ from sklearn.pipeline import Pipeline
 
 from .parameter_codec import ParameterCodec
 from .scaling_kind import ScalingKind
+from .scaling_strategy import ScalingStrategy
 from .transformers import PredictorLike, TransformerLike
 from .types import JsonValue
 
@@ -43,6 +44,18 @@ class ScalingParameters(ABC):
 
     @property
     @abstractmethod
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+
+    @property
+    @abstractmethod
     def kind(self) -> ScalingKind:
         """
         Get what this strategy does to the values.
@@ -66,7 +79,7 @@ class ScalingParameters(ABC):
         """
 
     @abstractmethod
-    def build_estimator(self) -> TransformerLike:
+    def build_transformer(self) -> TransformerLike:
         """
         Build an unfitted scikit-learn transformer, without input checks.
 
@@ -77,13 +90,13 @@ class ScalingParameters(ABC):
         """
 
     @abstractmethod
-    def build_scaler(self) -> Scaler[TransformerLike]:
+    def build_scaler(self) -> Scaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        Scaler[TransformerLike]
+        Scaler
             The scaler.
         """
 
@@ -103,4 +116,6 @@ class ScalingParameters(ABC):
         Pipeline[PredictionT]
             A pipeline with a ``scaler`` step and an ``estimator`` step.
         """
-        return Pipeline([("scaler", self.build_estimator()), ("estimator", estimator)])
+        return Pipeline(
+            [("scaler", self.build_transformer()), ("estimator", estimator)]
+        )

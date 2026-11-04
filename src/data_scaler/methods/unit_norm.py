@@ -9,7 +9,7 @@ from sklearn.preprocessing import Normalizer
 from ..parameter import ScalingParameters
 from ..scaler import Scaler
 from ..scaling_kind import ScalingKind
-from ..transformers import TransformerLike
+from ..scaling_strategy import ScalingStrategy
 
 
 class Norm(Enum):
@@ -31,7 +31,7 @@ class Norm(Enum):
     MAX = "max"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class UnitNormScalingParameters(ScalingParameters):
     """
     Each sample, not each feature, is divided by its length.
@@ -55,6 +55,19 @@ class UnitNormScalingParameters(ScalingParameters):
     def __post_init__(self) -> None:
         if self.is_nan_allowed:
             raise ValueError("is_nan_allowed is not supported by unit norm scaling")
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.UNIT_NORM
 
     @property
     @override
@@ -83,7 +96,7 @@ class UnitNormScalingParameters(ScalingParameters):
         return ("n_features_in_",)
 
     @override
-    def build_estimator(self) -> Normalizer:
+    def build_transformer(self) -> Normalizer:
         """
         Build an unfitted transformer.
 
@@ -95,13 +108,13 @@ class UnitNormScalingParameters(ScalingParameters):
         return Normalizer(norm=self.norm.value)
 
     @override
-    def build_scaler(self) -> Scaler[TransformerLike]:
+    def build_scaler(self) -> Scaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        Scaler[TransformerLike]
+        Scaler
             The scaler.
         """
-        return Scaler(self, self.build_estimator())
+        return Scaler(self, self.build_transformer())

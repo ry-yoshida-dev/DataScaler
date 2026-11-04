@@ -8,7 +8,7 @@ version = "0.0.1"
 authors = [
   { name = "Ryuto Yoshida" },
 ]
-description = "Feature scaling and normalization strategies selected by one enum, built on scikit-learn."
+description = "Feature scaling and normalization strategies with strict checks and pickle-free persistence, built on scikit-learn."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

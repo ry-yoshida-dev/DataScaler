@@ -8,10 +8,10 @@ from sklearn.preprocessing import RobustScaler
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
-from ..transformers import InvertibleTransformerLike
+from ..scaling_strategy import ScalingStrategy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RobustScalingParameters(ScalingParameters):
     """
     Each feature is centered on its median and scaled by a quantile range.
@@ -50,6 +50,19 @@ class RobustScalingParameters(ScalingParameters):
 
     @property
     @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.ROBUST
+
+    @property
+    @override
     def kind(self) -> ScalingKind:
         """
         Get what this strategy does to the values.
@@ -59,9 +72,9 @@ class RobustScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        return ScalingKind.of_linear(
-            is_centered=self.is_centered, is_scaled=self.is_scaled
-        )
+        if self.is_centered:
+            return ScalingKind.AFFINE
+        return ScalingKind.PROPORTIONAL if self.is_scaled else ScalingKind.IDENTITY
 
     @property
     @override
@@ -77,7 +90,7 @@ class RobustScalingParameters(ScalingParameters):
         return ("center_", "scale_", "n_features_in_")
 
     @override
-    def build_estimator(self) -> RobustScaler:
+    def build_transformer(self) -> RobustScaler:
         """
         Build an unfitted transformer.
 
@@ -94,13 +107,13 @@ class RobustScalingParameters(ScalingParameters):
         )
 
     @override
-    def build_scaler(self) -> InvertibleScaler[InvertibleTransformerLike]:
+    def build_scaler(self) -> InvertibleScaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        InvertibleScaler[InvertibleTransformerLike]
+        InvertibleScaler
             The scaler.
         """
-        return InvertibleScaler(self, self.build_estimator())
+        return InvertibleScaler(self, self.build_transformer())

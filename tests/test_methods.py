@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import fields
 from typing import cast
 
 import numpy as np
@@ -100,12 +101,17 @@ class TestPipeline(unittest.TestCase):
     def test_estimators_are_usable_as_raw_transformers(self) -> None:
         for parameters in ALL_METHODS:
             with self.subTest(parameters=parameters):
-                estimator = parameters.build_estimator()
+                estimator = parameters.build_transformer()
                 _ = estimator.fit(SKEWED)
                 self.assertEqual(estimator.transform(SKEWED).shape, SKEWED.shape)
 
 
 class TestParameterValidation(unittest.TestCase):
+    def test_every_field_is_keyword_only(self) -> None:
+        for parameters in ALL_METHODS:
+            with self.subTest(parameters=parameters):
+                self.assertTrue(all(field.kw_only for field in fields(parameters)))
+
     def test_rejects_invalid_ranges(self) -> None:
         with self.assertRaises(ValueError):
             _ = MinMaxScalingParameters(feature_range=(1.0, 0.0))

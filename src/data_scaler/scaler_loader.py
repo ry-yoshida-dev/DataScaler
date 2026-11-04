@@ -17,20 +17,17 @@ from .parameter import ScalingParameters
 from .parameter_codec import ParameterCodec
 from .scaler import Scaler
 from .scaler_state import ScalerState
-from .transformers import TransformerLike
+from .scaling_strategy import ScalingStrategy
 
-PARAMETER_TYPES: Final[dict[str, type[ScalingParameters]]] = {
-    parameter_type.__name__: parameter_type
-    for parameter_type in (
-        MaxAbsScalingParameters,
-        MinMaxScalingParameters,
-        NoScalingParameters,
-        PowerScalingParameters,
-        QuantileScalingParameters,
-        RobustScalingParameters,
-        StandardScalingParameters,
-        UnitNormScalingParameters,
-    )
+PARAMETER_TYPES: Final[dict[ScalingStrategy, type[ScalingParameters]]] = {
+    ScalingStrategy.NONE: NoScalingParameters,
+    ScalingStrategy.STANDARD: StandardScalingParameters,
+    ScalingStrategy.MIN_MAX: MinMaxScalingParameters,
+    ScalingStrategy.MAX_ABS: MaxAbsScalingParameters,
+    ScalingStrategy.ROBUST: RobustScalingParameters,
+    ScalingStrategy.UNIT_NORM: UnitNormScalingParameters,
+    ScalingStrategy.QUANTILE: QuantileScalingParameters,
+    ScalingStrategy.POWER: PowerScalingParameters,
 }
 
 
@@ -40,7 +37,7 @@ class ScalerLoader:
     """
 
     @staticmethod
-    def from_state(state: ScalerState) -> Scaler[TransformerLike]:
+    def from_state(state: ScalerState) -> Scaler:
         """
         Rebuild a fitted scaler.
 
@@ -51,25 +48,23 @@ class ScalerLoader:
 
         Returns
         -------
-        Scaler[TransformerLike]
+        Scaler
             The fitted scaler of the original concrete type.
 
         Raises
         ------
         ValueError
-            If the state names an unknown strategy.
+            If the parameters or attributes do not fit the strategy.
         """
-        if state.method not in PARAMETER_TYPES:
-            raise ValueError(f"Unknown scaling method: {state.method}")
         parameters: ScalingParameters = ParameterCodec.decode(
-            PARAMETER_TYPES[state.method], state.parameters
+            PARAMETER_TYPES[state.strategy], state.parameters
         )
-        scaler: Scaler[TransformerLike] = parameters.build_scaler()
+        scaler: Scaler = parameters.build_scaler()
         scaler.restore_state(state)
         return scaler
 
     @staticmethod
-    def load(path: Path) -> Scaler[TransformerLike]:
+    def load(path: Path) -> Scaler:
         """
         Read a fitted scaler written by ``Scaler.save``.
 
@@ -82,7 +77,7 @@ class ScalerLoader:
 
         Returns
         -------
-        Scaler[TransformerLike]
+        Scaler
             The fitted scaler of the original concrete type.
 
         Raises

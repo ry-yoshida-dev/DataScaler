@@ -8,13 +8,27 @@ from sklearn.preprocessing import MaxAbsScaler
 from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
+from ..scaling_strategy import ScalingStrategy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MaxAbsScalingParameters(ScalingParameters):
     """
     Each feature is divided by its largest absolute value, keeping zeros.
     """
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.MAX_ABS
 
     @property
     @override
@@ -43,7 +57,7 @@ class MaxAbsScalingParameters(ScalingParameters):
         return ("max_abs_", "scale_", "n_samples_seen_", "n_features_in_")
 
     @override
-    def build_estimator(self) -> MaxAbsScaler:
+    def build_transformer(self) -> MaxAbsScaler:
         """
         Build an unfitted transformer.
 
@@ -64,4 +78,4 @@ class MaxAbsScalingParameters(ScalingParameters):
         IncrementalScaler
             The scaler.
         """
-        return IncrementalScaler(self, self.build_estimator())
+        return IncrementalScaler(self, self.build_transformer())

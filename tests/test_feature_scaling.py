@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 from numpy.typing import NDArray
 
-from data_scaler import FeatureScaling, Scaler, TransformerLike
+from data_scaler import FeatureScaling, Scaler
 from data_scaler.types import FloatArray
 
 X: NDArray[np.float64] = np.array(
@@ -52,5 +52,5 @@ class TestFeatureScaling(unittest.TestCase):
     def test_each_build_returns_an_independent_scaler(self) -> None:
         for scaling in FeatureScaling:
             with self.subTest(scaling=scaling):
-                first: Scaler[TransformerLike] = scaling.build_scaler()
+                first: Scaler = scaling.build_scaler()
                 self.assertIsNot(first, scaling.build_scaler())

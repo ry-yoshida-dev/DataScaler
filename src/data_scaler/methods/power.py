@@ -11,7 +11,7 @@ from sklearn.preprocessing import FunctionTransformer, PowerTransformer, Standar
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
-from ..transformers import InvertibleTransformerLike
+from ..scaling_strategy import ScalingStrategy
 
 
 class PowerMethod(Enum):
@@ -30,7 +30,7 @@ class PowerMethod(Enum):
     BOX_COX = "box-cox"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class PowerScalingParameters(ScalingParameters):
     """
     Each feature is made more Gaussian by a learned power transformation.
@@ -45,6 +45,19 @@ class PowerScalingParameters(ScalingParameters):
 
     method: PowerMethod = PowerMethod.YEO_JOHNSON
     is_standardized: bool = True
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.POWER
 
     @property
     @override
@@ -83,7 +96,7 @@ class PowerScalingParameters(ScalingParameters):
         )
 
     @override
-    def build_estimator(self) -> Pipeline[np.float64]:
+    def build_transformer(self) -> Pipeline[np.float64]:
         """
         Build an unfitted transformer.
 
@@ -109,13 +122,13 @@ class PowerScalingParameters(ScalingParameters):
         )
 
     @override
-    def build_scaler(self) -> InvertibleScaler[InvertibleTransformerLike]:
+    def build_scaler(self) -> InvertibleScaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        InvertibleScaler[InvertibleTransformerLike]
+        InvertibleScaler
             The scaler.
         """
-        return InvertibleScaler(self, self.build_estimator())
+        return InvertibleScaler(self, self.build_transformer())

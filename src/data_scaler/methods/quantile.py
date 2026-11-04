@@ -9,7 +9,7 @@ from sklearn.preprocessing import QuantileTransformer
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
-from ..transformers import InvertibleTransformerLike
+from ..scaling_strategy import ScalingStrategy
 
 
 class OutputDistribution(Enum):
@@ -28,7 +28,7 @@ class OutputDistribution(Enum):
     NORMAL = "normal"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class QuantileScalingParameters(ScalingParameters):
     """
     Each feature is mapped through its empirical distribution.
@@ -58,7 +58,7 @@ class QuantileScalingParameters(ScalingParameters):
     n_quantiles: int = 1000
     output_distribution: OutputDistribution = OutputDistribution.UNIFORM
     subsample: int | None = 10000
-    random_state: int | None = 114514
+    random_state: int | None = 0
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -74,6 +74,19 @@ class QuantileScalingParameters(ScalingParameters):
             raise ValueError("subsample must not be below n_quantiles")
         if self.random_state is not None and self.random_state < 0:
             raise ValueError("random_state must not be negative")
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.QUANTILE
 
     @property
     @override
@@ -102,7 +115,7 @@ class QuantileScalingParameters(ScalingParameters):
         return ("quantiles_", "references_", "n_quantiles_", "n_features_in_")
 
     @override
-    def build_estimator(self) -> QuantileTransformer:
+    def build_transformer(self) -> QuantileTransformer:
         """
         Build an unfitted transformer.
 
@@ -119,13 +132,13 @@ class QuantileScalingParameters(ScalingParameters):
         )
 
     @override
-    def build_scaler(self) -> InvertibleScaler[InvertibleTransformerLike]:
+    def build_scaler(self) -> InvertibleScaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        InvertibleScaler[InvertibleTransformerLike]
+        InvertibleScaler
             The scaler.
         """
-        return InvertibleScaler(self, self.build_estimator())
+        return InvertibleScaler(self, self.build_transformer())

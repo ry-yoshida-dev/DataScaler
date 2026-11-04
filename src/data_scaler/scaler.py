@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import cast
 
 import numpy as np
+import sklearn
 from numpy.typing import NDArray
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
@@ -15,26 +17,26 @@ from .transformers import TransformerLike
 from .types import FloatArray, NumericArray
 
 
-class Scaler[TransformerT: TransformerLike]:
+class Scaler:
     """
     Applies a scaling strategy with strict input checks.
 
-    Inputs are never modified. Unlike the wrapped estimator, a scaler rejects a
+    Inputs are never modified. Unlike the wrapped transformer, a scaler rejects a
     changed number of features with a clear error and can be saved without pickle.
 
     Parameters
     ----------
     parameters : ScalingConfigurationLike
         The configuration this scaler was built from.
-    estimator : TransformerT
+    transformer : TransformerLike
         The wrapped transformer.
     """
 
     def __init__(
-        self, parameters: ScalingConfigurationLike, estimator: TransformerT
+        self, parameters: ScalingConfigurationLike, transformer: TransformerLike
     ) -> None:
         self._parameters: ScalingConfigurationLike = parameters
-        self._estimator: TransformerT = estimator
+        self._transformer: TransformerLike = transformer
         self._n_features: int | None = None
 
     @property
@@ -89,7 +91,7 @@ class Scaler[TransformerT: TransformerLike]:
         self._validate(X)
         if self._parameters.is_nan_allowed:
             FeatureValidator.require_observed_features(X)
-        _ = self._estimator.fit(X)
+        _ = self._transformer.fit(X)
         self._record_fitted(X)
 
     def transform(self, X: NumericArray) -> FloatArray:
@@ -116,7 +118,7 @@ class Scaler[TransformerT: TransformerLike]:
             If the features are invalid or their number differs from fitting.
         """
         self._validate_fitted_shape(X)
-        return self._to_new_float_array(self._estimator.transform(X), X)
+        return self._to_new_float_array(self._transformer.transform(X), X)
 
     def fit_transform(self, X: NumericArray) -> FloatArray:
         """
@@ -169,10 +171,11 @@ class Scaler[TransformerT: TransformerLike]:
             else:
                 arrays[path] = np.asarray(value)
         return ScalerState(
-            method=type(self._parameters).__name__,
+            strategy=self._parameters.strategy,
             parameters=self._parameters.encode(),
             n_features=n_features,
             arrays=arrays,
+            scikit_learn_version=sklearn.__version__,
             empty_attributes=tuple(empty_attributes),
         )
 
@@ -192,6 +195,12 @@ class Scaler[TransformerT: TransformerLike]:
             from what this strategy learns.
         """
         self._validate_state(state)
+        if state.scikit_learn_version != sklearn.__version__:
+            warnings.warn(
+                f"State saved with scikit-learn {state.scikit_learn_version} is loaded with {sklearn.__version__}, whose fitted attributes may differ",
+                UserWarning,
+                stacklevel=2,
+            )
         for path, array in state.arrays.items():
             # Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
             value: object = cast(object, array[()])
@@ -234,11 +243,11 @@ class Scaler[TransformerT: TransformerLike]:
             )
 
     def _validate_state(self, state: ScalerState) -> None:
-        if state.method != type(self._parameters).__name__ or (
+        if state.strategy is not self._parameters.strategy or (
             dict(state.parameters) != self._parameters.encode()
         ):
             raise ValueError(
-                f"State of {state.method} does not match the parameters {self._parameters}"
+                f"State of {state.strategy.name} does not match the parameters {self._parameters}"
             )
         saved: list[str] = [*state.arrays, *state.empty_attributes]
         if sorted(saved) != sorted(self._parameters.state_attributes):
@@ -254,9 +263,9 @@ class Scaler[TransformerT: TransformerLike]:
                 )
 
     def _resolve_owner(self, path: str) -> object:
-        if "." not in path or not isinstance(self._estimator, Pipeline):
-            return self._estimator
-        return self._estimator.named_steps[path.split(".", 1)[0]]
+        if "." not in path or not isinstance(self._transformer, Pipeline):
+            return self._transformer
+        return self._transformer.named_steps[path.split(".", 1)[0]]
 
     @staticmethod
     def _to_new_float_array(result: FloatArray, X: NumericArray) -> FloatArray:

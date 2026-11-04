@@ -9,9 +9,10 @@ from sklearn.preprocessing import MinMaxScaler
 from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
+from ..scaling_strategy import ScalingStrategy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class MinMaxScalingParameters(ScalingParameters):
     """
     Each feature is rescaled to a fixed range.
@@ -38,6 +39,19 @@ class MinMaxScalingParameters(ScalingParameters):
             raise ValueError(
                 f"feature_range must be finite and increasing, got {self.feature_range}"
             )
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.MIN_MAX
 
     @property
     @override
@@ -74,7 +88,7 @@ class MinMaxScalingParameters(ScalingParameters):
         )
 
     @override
-    def build_estimator(self) -> MinMaxScaler:
+    def build_transformer(self) -> MinMaxScaler:
         """
         Build an unfitted transformer.
 
@@ -95,4 +109,4 @@ class MinMaxScalingParameters(ScalingParameters):
         IncrementalScaler
             The scaler.
         """
-        return IncrementalScaler(self, self.build_estimator())
+        return IncrementalScaler(self, self.build_transformer())

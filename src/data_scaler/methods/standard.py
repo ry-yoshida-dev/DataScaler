@@ -8,9 +8,10 @@ from sklearn.preprocessing import StandardScaler
 from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
+from ..scaling_strategy import ScalingStrategy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class StandardScalingParameters(ScalingParameters):
     """
     Each feature has zero mean and unit variance.
@@ -28,6 +29,19 @@ class StandardScalingParameters(ScalingParameters):
 
     @property
     @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.STANDARD
+
+    @property
+    @override
     def kind(self) -> ScalingKind:
         """
         Get what this strategy does to the values.
@@ -37,9 +51,9 @@ class StandardScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        return ScalingKind.of_linear(
-            is_centered=self.is_centered, is_scaled=self.is_scaled
-        )
+        if self.is_centered:
+            return ScalingKind.AFFINE
+        return ScalingKind.PROPORTIONAL if self.is_scaled else ScalingKind.IDENTITY
 
     @property
     @override
@@ -55,7 +69,7 @@ class StandardScalingParameters(ScalingParameters):
         return ("mean_", "var_", "scale_", "n_samples_seen_", "n_features_in_")
 
     @override
-    def build_estimator(self) -> StandardScaler:
+    def build_transformer(self) -> StandardScaler:
         """
         Build an unfitted transformer.
 
@@ -76,4 +90,4 @@ class StandardScalingParameters(ScalingParameters):
         IncrementalScaler
             The scaler.
         """
-        return IncrementalScaler(self, self.build_estimator())
+        return IncrementalScaler(self, self.build_transformer())

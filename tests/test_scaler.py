@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -29,9 +30,10 @@ from data_scaler import (
     Scaler,
     ScalerLoader,
     ScalerState,
+    ScalingKind,
     ScalingParameters,
+    ScalingStrategy,
     StandardScalingParameters,
-    TransformerLike,
     UnitNormScalingParameters,
 )
 from data_scaler.scaler_state import FORMAT_VERSION
@@ -62,7 +64,7 @@ class TestStrictInputs(unittest.TestCase):
     def test_requires_fit(self) -> None:
         for parameters in ALL_METHODS:
             with self.subTest(parameters=parameters):
-                scaler: Scaler[TransformerLike] = parameters.build_scaler()
+                scaler: Scaler = parameters.build_scaler()
                 with self.assertRaises(NotFittedError):
                     _ = scaler.transform(X)
                 with self.assertRaises(NotFittedError):
@@ -70,7 +72,7 @@ class TestStrictInputs(unittest.TestCase):
 
     def test_rejects_invalid_matrices(self) -> None:
         for parameters in ALL_METHODS:
-            scaler: Scaler[TransformerLike] = parameters.build_scaler()
+            scaler: Scaler = parameters.build_scaler()
             for invalid in (
                 np.zeros(3),
                 np.zeros((0, 3)),
@@ -89,13 +91,13 @@ class TestStrictInputs(unittest.TestCase):
     def test_rejects_a_changed_number_of_features_for_every_strategy(self) -> None:
         for parameters in ALL_METHODS:
             with self.subTest(parameters=parameters):
-                scaler: Scaler[TransformerLike] = parameters.build_scaler()
+                scaler: Scaler = parameters.build_scaler()
                 scaler.fit(X)
                 with self.assertRaisesRegex(ValueError, "3 features"):
                     _ = scaler.transform(np.ones((2, 4)))
 
     def test_failed_fit_leaves_the_scaler_unfitted(self) -> None:
-        scaler: Scaler[TransformerLike] = StandardScalingParameters().build_scaler()
+        scaler: Scaler = StandardScalingParameters().build_scaler()
         scaler.fit(X)
         with self.assertRaises(ValueError):
             scaler.fit(np.array([[np.nan, 1.0]]))
@@ -107,7 +109,7 @@ class TestStrictInputs(unittest.TestCase):
             with self.subTest(parameters=parameters):
                 data: NDArray[np.float64] = X.copy()
                 data.setflags(write=False)
-                scaler: Scaler[TransformerLike] = parameters.build_scaler()
+                scaler: Scaler = parameters.build_scaler()
                 self.assertFalse(np.shares_memory(scaler.fit_transform(data), data))
 
     def test_keeps_single_precision(self) -> None:
@@ -186,7 +188,7 @@ class TestMissingValues(unittest.TestCase):
 class TestInverse(unittest.TestCase):
     def test_round_trip(self) -> None:
         for parameters in ALL_METHODS:
-            scaler: Scaler[TransformerLike] = parameters.build_scaler()
+            scaler: Scaler = parameters.build_scaler()
             if not isinstance(scaler, InvertibleScaler):
                 continue
             with self.subTest(parameters=parameters):
@@ -254,10 +256,10 @@ class TestPersistence(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
             ):
                 path: Path = Path(directory) / "scaler.npz"
-                scaler: Scaler[TransformerLike] = parameters.build_scaler()
+                scaler: Scaler = parameters.build_scaler()
                 scaler.fit(X)
                 scaler.save(path)
-                loaded: Scaler[TransformerLike] = ScalerLoader.load(path)
+                loaded: Scaler = ScalerLoader.load(path)
                 self.assertEqual(loaded.parameters, parameters)
                 self.assertIs(type(loaded), type(scaler))
                 self.assertEqual(loaded.n_features, 3)
@@ -279,7 +281,7 @@ class TestPersistence(unittest.TestCase):
             first: IncrementalScaler = StandardScalingParameters().build_scaler()
             first.partial_fit(X[:100])
             first.save(path)
-            loaded: Scaler[TransformerLike] = ScalerLoader.load(path)
+            loaded: Scaler = ScalerLoader.load(path)
             assert isinstance(loaded, IncrementalScaler)
             loaded.partial_fit(X[100:])
             at_once: IncrementalScaler = StandardScalingParameters().build_scaler()
@@ -302,14 +304,14 @@ class TestPersistence(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
             ):
                 path: Path = Path(directory) / "scaler.npz"
-                first: Scaler[TransformerLike] = parameters.build_scaler()
+                first: Scaler = parameters.build_scaler()
                 assert isinstance(first, IncrementalScaler)
                 first.partial_fit(X[:100])
                 first.save(path)
-                loaded: Scaler[TransformerLike] = ScalerLoader.load(path)
+                loaded: Scaler = ScalerLoader.load(path)
                 assert isinstance(loaded, IncrementalScaler)
                 loaded.partial_fit(X[100:])
-                at_once: Scaler[TransformerLike] = parameters.build_scaler()
+                at_once: Scaler = parameters.build_scaler()
                 at_once.fit(X)
                 np.testing.assert_allclose(
                     loaded.transform(UNSEEN), at_once.transform(UNSEEN)
@@ -332,15 +334,16 @@ class TestPersistence(unittest.TestCase):
         arrays: dict[str, NDArray[np.generic]] = dict(state.arrays)
         valid: dict[str, JsonValue] = {
             "format_version": FORMAT_VERSION,
-            "method": state.method,
+            "strategy": state.strategy.value,
             "parameters": dict(state.parameters),
             "n_features": state.n_features,
+            "scikit_learn_version": state.scikit_learn_version,
             "empty_attributes": [],
         }
         cases: list[tuple[JsonValue, dict[str, NDArray[np.generic]]]] = [
             ([1], arrays),
             ({key: valid[key] for key in valid if key != "format_version"}, arrays),
-            ({key: valid[key] for key in valid if key != "method"}, arrays),
+            ({key: valid[key] for key in valid if key != "strategy"}, arrays),
             ({key: valid[key] for key in valid if key != "n_features"}, arrays),
             ({**valid, "n_features": "3"}, arrays),
             ({**valid, "n_features": 0}, arrays),
@@ -348,7 +351,9 @@ class TestPersistence(unittest.TestCase):
             ({**valid, "empty_attributes": [1]}, arrays),
             ({**valid, "parameters": {"unknown": 1}}, arrays),
             ({**valid, "parameters": {"is_centered": "yes"}}, arrays),
-            ({**valid, "method": "Unknown"}, arrays),
+            ({**valid, "strategy": "unknown"}, arrays),
+            ({**valid, "strategy": ["standard"]}, arrays),
+            ({**valid, "scikit_learn_version": 1}, arrays),
             (valid, {}),
             (valid, {name: arrays[name] for name in arrays if name != "scale_"}),
             (valid, {**arrays, "transform": np.zeros(3)}),
@@ -371,6 +376,29 @@ class TestPersistence(unittest.TestCase):
                         )
                     _ = ScalerLoader.load(path)
 
+    def test_every_strategy_can_be_loaded_with_its_kind(self) -> None:
+        strategies: set[ScalingStrategy] = set()
+        for parameters in ALL_METHODS:
+            with (
+                self.subTest(parameters=parameters),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                path: Path = Path(directory) / "scaler.npz"
+                scaler: Scaler = parameters.build_scaler()
+                scaler.fit(X)
+                scaler.save(path)
+                kind: ScalingKind = ScalerLoader.load(path).parameters.kind
+                self.assertIs(kind, parameters.kind)
+                strategies.add(parameters.strategy)
+        self.assertEqual(strategies, set(ScalingStrategy))
+
+    def test_warns_about_another_scikit_learn_version(self) -> None:
+        source: IncrementalScaler = StandardScalingParameters().build_scaler()
+        source.fit(X)
+        state: ScalerState = replace(source.to_state(), scikit_learn_version="0.0")
+        with self.assertWarnsRegex(UserWarning, "scikit-learn 0.0"):
+            _ = ScalerLoader.from_state(state)
+
     def test_rejects_a_bare_array_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path: Path = Path(directory) / "array.npy"
@@ -385,12 +413,7 @@ class TestPersistence(unittest.TestCase):
         state: ScalerState = source.to_state()
         with self.assertRaises(ValueError):
             _ = ScalerLoader.from_state(
-                ScalerState(
-                    method=state.method,
-                    parameters={**state.parameters, "feature_range": "ab"},
-                    n_features=state.n_features,
-                    arrays=state.arrays,
-                )
+                replace(state, parameters={**state.parameters, "feature_range": "ab"})
             )
 
     def test_rejects_unrelated_files(self) -> None:

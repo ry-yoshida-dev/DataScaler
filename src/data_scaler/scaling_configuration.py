@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .scaling_kind import ScalingKind
+from .scaling_strategy import ScalingStrategy
 from .types import JsonValue
 
 
@@ -26,6 +28,30 @@ class ScalingConfigurationLike(Protocol):
         -------
         bool
             True when NaN is allowed.
+        """
+        ...
+
+    @property
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        ...
+
+    @property
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
         """
         ...
 

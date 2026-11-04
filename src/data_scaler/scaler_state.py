@@ -10,6 +10,7 @@ import numpy as np
 from numpy.lib.npyio import NpzFile
 from numpy.typing import NDArray
 
+from .scaling_strategy import ScalingStrategy
 from .types import JsonValue
 
 METADATA_KEY: Final[str] = "__metadata__"
@@ -23,14 +24,16 @@ class ScalerState:
 
     Attributes
     ----------
-    method : str
-        The name of the parameter class.
+    strategy : ScalingStrategy
+        The identifier of the strategy.
     parameters : Mapping[str, JsonValue]
         The parameter values.
     n_features : int
         The number of features seen during fitting.
     arrays : Mapping[str, NDArray[np.generic]]
         The fitted statistics by attribute path.
+    scikit_learn_version : str
+        The version of scikit-learn that produced the statistics.
     empty_attributes : tuple[str, ...]
         The attribute paths that this configuration leaves empty after fitting.
 
@@ -40,11 +43,12 @@ class ScalerState:
         If the number of features is not positive or a statistic is not numeric.
     """
 
-    method: str
+    strategy: ScalingStrategy
     parameters: Mapping[str, JsonValue]
     n_features: int
     arrays: Mapping[str, NDArray[np.generic]]
-    empty_attributes: tuple[str, ...] = ()
+    scikit_learn_version: str
+    empty_attributes: tuple[str, ...]
 
     def __post_init__(self) -> None:
         if self.n_features < 1:
@@ -65,9 +69,10 @@ class ScalerState:
         metadata: str = json.dumps(
             {
                 "format_version": FORMAT_VERSION,
-                "method": self.method,
+                "strategy": self.strategy.value,
                 "parameters": dict(self.parameters),
                 "n_features": self.n_features,
+                "scikit_learn_version": self.scikit_learn_version,
                 "empty_attributes": list(self.empty_attributes),
             }
         )
@@ -121,15 +126,17 @@ class ScalerState:
         version: JsonValue = metadata.get("format_version")
         if version != FORMAT_VERSION:
             raise ValueError(f"Unsupported scaler state format version: {version}")
-        method: JsonValue = metadata.get("method")
+        strategy: JsonValue = metadata.get("strategy")
         parameters: JsonValue = metadata.get("parameters")
         n_features: JsonValue = metadata.get("n_features")
+        scikit_learn_version: JsonValue = metadata.get("scikit_learn_version")
         empty_attributes: JsonValue = metadata.get("empty_attributes")
         if (
-            not isinstance(method, str)
+            not isinstance(strategy, str)
             or not isinstance(parameters, dict)
             or not isinstance(n_features, int)
             or isinstance(n_features, bool)
+            or not isinstance(scikit_learn_version, str)
             or not isinstance(empty_attributes, list)
         ):
             raise ValueError(f"{path} has invalid scaler state metadata")
@@ -139,9 +146,10 @@ class ScalerState:
         if len(empty_names) != len(empty_attributes):
             raise ValueError(f"{path} has invalid scaler state metadata")
         return ScalerState(
-            method=method,
+            strategy=ScalingStrategy(strategy),
             parameters=parameters,
             n_features=n_features,
             arrays=arrays,
+            scikit_learn_version=scikit_learn_version,
             empty_attributes=empty_names,
         )

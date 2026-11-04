@@ -28,24 +28,3 @@ class ScalingKind(Enum):
     AFFINE = "affine"
     MONOTONIC = "monotonic"
     SAMPLE_WISE = "sample_wise"
-
-    @classmethod
-    def of_linear(cls, *, is_centered: bool, is_scaled: bool) -> ScalingKind:
-        """
-        Get the kind of a per-feature strategy that can center and divide.
-
-        Parameters
-        ----------
-        is_centered : bool
-            Whether a location is subtracted from each feature.
-        is_scaled : bool
-            Whether each feature is divided by a spread.
-
-        Returns
-        -------
-        ScalingKind
-            The kind.
-        """
-        if is_centered:
-            return cls.AFFINE
-        return cls.PROPORTIONAL if is_scaled else cls.IDENTITY

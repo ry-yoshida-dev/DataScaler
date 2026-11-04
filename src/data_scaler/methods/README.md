@@ -2,7 +2,7 @@
 
 ## Overview
 
-Parameter classes for each scaling strategy. Every parameter class is frozen, validates its fields on construction, and builds a scaler via `build_scaler()`, a raw transformer via `build_estimator()`, or a pipeline via `build_pipeline()`.
+Parameter classes for each scaling strategy. Every parameter class is frozen, validates its fields on construction, and builds a scaler via `build_scaler()`, a raw transformer via `build_transformer()`, or a pipeline via `build_pipeline()`.
 
 ## Components
 

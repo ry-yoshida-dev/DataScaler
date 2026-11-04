@@ -83,11 +83,13 @@ pipeline = RobustScalingParameters().build_pipeline(estimator)
 
 - Inputs are never modified, and outputs never share memory with inputs.
 - `Scaler` rejects NaN unless `is_nan_allowed` is set; then NaN marks missing values, which are ignored while learning and stay NaN in the output. Infinity is always rejected. `fit` rejects a feature with only NaN, because there is nothing to learn from.
-- Pipelines and `build_estimator` use the scikit-learn transformers directly, without the checks of `Scaler`.
+- Pipelines and `build_transformer` use the scikit-learn transformers directly, without the checks of `Scaler`.
 - `partial_fit` and `inverse_transform` exist only on scalers that support them, so the type checker rejects other uses.
 - `QuantileScalingParameters.n_quantiles` must not exceed the number of training samples, or scikit-learn warns and reduces it.
 - `kind` on `FeatureScaling` and on every parameter class tells what the configured strategy does to the values, as a `ScalingKind`, for callers whose results depend on it.
-- Saved scalers depend on the fitted attributes of scikit-learn, whose meaning could change between major versions.
+- Saved scalers depend on the fitted attributes of scikit-learn, whose meaning could change between versions, so loading warns when the version differs from the one that saved them.
+- Parameter fields are keyword-only.
+- `FeatureScaling.build_scaler` returns the base `Scaler`. Use a parameter class when the type checker should see `inverse_transform` or `partial_fit`.
 
 ## Development
 

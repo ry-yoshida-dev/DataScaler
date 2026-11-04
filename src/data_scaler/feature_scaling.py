@@ -16,7 +16,7 @@ from .methods import (
 from .parameter import ScalingParameters
 from .scaler import Scaler
 from .scaling_kind import ScalingKind
-from .transformers import PredictorLike, TransformerLike
+from .transformers import PredictorLike
 
 
 class FeatureScaling(Enum):
@@ -84,13 +84,13 @@ class FeatureScaling(Enum):
         """
         return self.parameters.kind
 
-    def build_scaler(self) -> Scaler[TransformerLike]:
+    def build_scaler(self) -> Scaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        Scaler[TransformerLike]
+        Scaler
             The scaler.
         """
         return self.parameters.build_scaler()

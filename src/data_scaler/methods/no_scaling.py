@@ -8,14 +8,27 @@ from sklearn.preprocessing import FunctionTransformer
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
 from ..scaling_kind import ScalingKind
-from ..transformers import InvertibleTransformerLike
+from ..scaling_strategy import ScalingStrategy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class NoScalingParameters(ScalingParameters):
     """
     Features are used as they are.
     """
+
+    @property
+    @override
+    def strategy(self) -> ScalingStrategy:
+        """
+        Get the identifier of this strategy.
+
+        Returns
+        -------
+        ScalingStrategy
+            The strategy.
+        """
+        return ScalingStrategy.NONE
 
     @property
     @override
@@ -44,7 +57,7 @@ class NoScalingParameters(ScalingParameters):
         return ()
 
     @override
-    def build_estimator(self) -> FunctionTransformer:
+    def build_transformer(self) -> FunctionTransformer:
         """
         Build an identity transformer.
 
@@ -56,13 +69,13 @@ class NoScalingParameters(ScalingParameters):
         return FunctionTransformer()
 
     @override
-    def build_scaler(self) -> InvertibleScaler[InvertibleTransformerLike]:
+    def build_scaler(self) -> InvertibleScaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        InvertibleScaler[InvertibleTransformerLike]
+        InvertibleScaler
             The scaler.
         """
-        return InvertibleScaler(self, self.build_estimator())
+        return InvertibleScaler(self, self.build_transformer())

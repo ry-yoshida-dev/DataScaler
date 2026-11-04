@@ -1,14 +1,30 @@
 from __future__ import annotations
 
 from .invertible_scaler import InvertibleScaler
+from .scaling_configuration import ScalingConfigurationLike
 from .transformers import IncrementalTransformerLike
 from .types import NumericArray
 
 
-class IncrementalScaler(InvertibleScaler[IncrementalTransformerLike]):
+class IncrementalScaler(InvertibleScaler):
     """
     Scaler that can learn from data too large to hold in memory at once.
+
+    Parameters
+    ----------
+    parameters : ScalingConfigurationLike
+        The configuration this scaler was built from.
+    transformer : IncrementalTransformerLike
+        The wrapped transformer.
     """
+
+    def __init__(
+        self,
+        parameters: ScalingConfigurationLike,
+        transformer: IncrementalTransformerLike,
+    ) -> None:
+        super().__init__(parameters, transformer)
+        self._incremental_transformer: IncrementalTransformerLike = transformer
 
     def partial_fit(self, X: NumericArray) -> None:
         """
@@ -29,8 +45,8 @@ class IncrementalScaler(InvertibleScaler[IncrementalTransformerLike]):
         if self._n_features is None:
             self._validate(X)
             # A failed fit may have left statistics behind, which fit discards.
-            _ = self._estimator.fit(X)
+            _ = self._transformer.fit(X)
         else:
             self._validate_fitted_shape(X)
-            _ = self._estimator.partial_fit(X)
+            _ = self._incremental_transformer.partial_fit(X)
         self._record_fitted(X)

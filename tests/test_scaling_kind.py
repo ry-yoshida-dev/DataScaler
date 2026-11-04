@@ -18,7 +18,6 @@ from data_scaler import (
     ScalingKind,
     ScalingParameters,
     StandardScalingParameters,
-    TransformerLike,
     UnitNormScalingParameters,
 )
 from data_scaler.types import FloatArray
@@ -74,7 +73,7 @@ class TestScalingKind(unittest.TestCase):
     def test_kind_is_the_strictest_description_of_the_transformation(self) -> None:
         for strategy, _ in CASES:
             with self.subTest(strategy=strategy):
-                scaler: Scaler[TransformerLike] = strategy.build_scaler()
+                scaler: Scaler = strategy.build_scaler()
                 scaler.fit(TRAINING)
                 scaled: FloatArray = scaler.transform(PROBE)
                 for feature in range(N_FEATURES):
