@@ -3,29 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import override
 
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MaxAbsScaler
 
-from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
+from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
 
 
 @dataclass(frozen=True, kw_only=True)
-class StandardScalingParameters(ScalingParameters):
+class MaxAbsScalingParameters(ScalingParameters):
     """
-    Each feature has zero mean and unit variance.
-
-    Attributes
-    ----------
-    is_centered : bool
-        Whether to subtract the mean.
-    is_scaled : bool
-        Whether to divide by the standard deviation.
+    Each feature is divided by its largest absolute value, keeping zeros.
     """
-
-    is_centered: bool = True
-    is_scaled: bool = True
 
     @property
     @override
@@ -38,7 +28,7 @@ class StandardScalingParameters(ScalingParameters):
         ScalingStrategy
             The strategy.
         """
-        return ScalingStrategy.STANDARD
+        return ScalingStrategy.MAX_ABS
 
     @property
     @override
@@ -51,9 +41,7 @@ class StandardScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        if self.is_centered:
-            return ScalingKind.AFFINE
-        return ScalingKind.PROPORTIONAL if self.is_scaled else ScalingKind.IDENTITY
+        return ScalingKind.PROPORTIONAL
 
     @property
     @override
@@ -66,19 +54,19 @@ class StandardScalingParameters(ScalingParameters):
         tuple[str, ...]
             The attribute names.
         """
-        return ("mean_", "var_", "scale_", "n_samples_seen_", "n_features_in_")
+        return ("max_abs_", "scale_", "n_samples_seen_", "n_features_in_")
 
     @override
-    def build_transformer(self) -> StandardScaler:
+    def build_transformer(self) -> MaxAbsScaler:
         """
         Build an unfitted transformer.
 
         Returns
         -------
-        StandardScaler
+        MaxAbsScaler
             The transformer.
         """
-        return StandardScaler(with_mean=self.is_centered, with_std=self.is_scaled)
+        return MaxAbsScaler()
 
     @override
     def build_scaler(self) -> IncrementalScaler:

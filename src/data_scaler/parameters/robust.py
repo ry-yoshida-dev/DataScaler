@@ -5,8 +5,8 @@ from typing import override
 
 from sklearn.preprocessing import RobustScaler
 
-from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
+from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from .methods import (
+from .parameter import ScalingParameters
+from .parameter_codec import ParameterCodec
+from .parameters import (
     MaxAbsScalingParameters,
     MinMaxScalingParameters,
     NoScalingParameters,
@@ -13,8 +15,6 @@ from .methods import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
-from .parameter import ScalingParameters
-from .parameter_codec import ParameterCodec
 from .scaler import Scaler
 from .scaler_state import ScalerState
 from .scaling_strategy import ScalingStrategy

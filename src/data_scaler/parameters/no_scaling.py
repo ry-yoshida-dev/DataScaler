@@ -3,18 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import override
 
-from sklearn.preprocessing import MaxAbsScaler
+from sklearn.preprocessing import FunctionTransformer
 
-from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
+from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
 
 
 @dataclass(frozen=True, kw_only=True)
-class MaxAbsScalingParameters(ScalingParameters):
+class NoScalingParameters(ScalingParameters):
     """
-    Each feature is divided by its largest absolute value, keeping zeros.
+    Features are used as they are.
     """
 
     @property
@@ -28,7 +28,7 @@ class MaxAbsScalingParameters(ScalingParameters):
         ScalingStrategy
             The strategy.
         """
-        return ScalingStrategy.MAX_ABS
+        return ScalingStrategy.NONE
 
     @property
     @override
@@ -41,7 +41,7 @@ class MaxAbsScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        return ScalingKind.PROPORTIONAL
+        return ScalingKind.IDENTITY
 
     @property
     @override
@@ -52,30 +52,30 @@ class MaxAbsScalingParameters(ScalingParameters):
         Returns
         -------
         tuple[str, ...]
-            The attribute names.
+            No attributes, because nothing is learned.
         """
-        return ("max_abs_", "scale_", "n_samples_seen_", "n_features_in_")
+        return ()
 
     @override
-    def build_transformer(self) -> MaxAbsScaler:
+    def build_transformer(self) -> FunctionTransformer:
         """
-        Build an unfitted transformer.
+        Build an identity transformer.
 
         Returns
         -------
-        MaxAbsScaler
+        FunctionTransformer
             The transformer.
         """
-        return MaxAbsScaler()
+        return FunctionTransformer()
 
     @override
-    def build_scaler(self) -> IncrementalScaler:
+    def build_scaler(self) -> InvertibleScaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        IncrementalScaler
+        InvertibleScaler
             The scaler.
         """
-        return IncrementalScaler(self, self.build_transformer())
+        return InvertibleScaler(self, self.build_transformer())

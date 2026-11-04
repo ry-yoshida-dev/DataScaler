@@ -1,44 +1,31 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import override
 
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
-from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
+from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
 
 
 @dataclass(frozen=True, kw_only=True)
-class MinMaxScalingParameters(ScalingParameters):
+class StandardScalingParameters(ScalingParameters):
     """
-    Each feature is rescaled to a fixed range.
+    Each feature has zero mean and unit variance.
 
     Attributes
     ----------
-    feature_range : tuple[float, float]
-        The lower and upper bounds of the range.
-    is_clipped : bool
-        Whether unseen values are clipped to the range.
-
-    Raises
-    ------
-    ValueError
-        If the bounds are not finite and increasing.
+    is_centered : bool
+        Whether to subtract the mean.
+    is_scaled : bool
+        Whether to divide by the standard deviation.
     """
 
-    feature_range: tuple[float, float] = (0.0, 1.0)
-    is_clipped: bool = False
-
-    def __post_init__(self) -> None:
-        lower, upper = self.feature_range
-        if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
-            raise ValueError(
-                f"feature_range must be finite and increasing, got {self.feature_range}"
-            )
+    is_centered: bool = True
+    is_scaled: bool = True
 
     @property
     @override
@@ -51,7 +38,7 @@ class MinMaxScalingParameters(ScalingParameters):
         ScalingStrategy
             The strategy.
         """
-        return ScalingStrategy.MIN_MAX
+        return ScalingStrategy.STANDARD
 
     @property
     @override
@@ -64,7 +51,9 @@ class MinMaxScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        return ScalingKind.MONOTONIC if self.is_clipped else ScalingKind.AFFINE
+        if self.is_centered:
+            return ScalingKind.AFFINE
+        return ScalingKind.PROPORTIONAL if self.is_scaled else ScalingKind.IDENTITY
 
     @property
     @override
@@ -77,27 +66,19 @@ class MinMaxScalingParameters(ScalingParameters):
         tuple[str, ...]
             The attribute names.
         """
-        return (
-            "min_",
-            "scale_",
-            "data_min_",
-            "data_max_",
-            "data_range_",
-            "n_samples_seen_",
-            "n_features_in_",
-        )
+        return ("mean_", "var_", "scale_", "n_samples_seen_", "n_features_in_")
 
     @override
-    def build_transformer(self) -> MinMaxScaler:
+    def build_transformer(self) -> StandardScaler:
         """
         Build an unfitted transformer.
 
         Returns
         -------
-        MinMaxScaler
+        StandardScaler
             The transformer.
         """
-        return MinMaxScaler(feature_range=self.feature_range, clip=self.is_clipped)
+        return StandardScaler(with_mean=self.is_centered, with_std=self.is_scaled)
 
     @override
     def build_scaler(self) -> IncrementalScaler:

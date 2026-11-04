@@ -1,31 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import override
 
 from sklearn.preprocessing import QuantileTransformer
 
-from ..invertible_scaler import InvertibleScaler
+from ..options import OutputDistribution
 from ..parameter import ScalingParameters
+from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
-
-
-class OutputDistribution(Enum):
-    """
-    Distribution that a quantile transformation maps features to.
-
-    Attributes
-    ----------
-    UNIFORM
-        Uniform on [0, 1].
-    NORMAL
-        Standard normal.
-    """
-
-    UNIFORM = "uniform"
-    NORMAL = "normal"
 
 
 @dataclass(frozen=True, kw_only=True)

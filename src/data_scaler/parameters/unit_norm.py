@@ -3,19 +3,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import override
 
-from sklearn.preprocessing import FunctionTransformer
+from sklearn.preprocessing import Normalizer
 
-from ..invertible_scaler import InvertibleScaler
+from ..options import Norm
 from ..parameter import ScalingParameters
+from ..scaler import Scaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
 
 
 @dataclass(frozen=True, kw_only=True)
-class NoScalingParameters(ScalingParameters):
+class UnitNormScalingParameters(ScalingParameters):
     """
-    Features are used as they are.
+    Each sample, not each feature, is divided by its length.
+
+    Nothing is learned, and the original lengths are lost, so there is no inverse.
+    All-zero samples stay unchanged.
+
+    Attributes
+    ----------
+    norm : Norm
+        How the length of a sample is measured.
+
+    Raises
+    ------
+    ValueError
+        If NaN is allowed, because a missing value leaves the length undefined.
     """
+
+    norm: Norm = Norm.L2
+
+    def __post_init__(self) -> None:
+        if self.is_nan_allowed:
+            raise ValueError("is_nan_allowed is not supported by unit norm scaling")
 
     @property
     @override
@@ -28,7 +48,7 @@ class NoScalingParameters(ScalingParameters):
         ScalingStrategy
             The strategy.
         """
-        return ScalingStrategy.NONE
+        return ScalingStrategy.UNIT_NORM
 
     @property
     @override
@@ -41,7 +61,7 @@ class NoScalingParameters(ScalingParameters):
         ScalingKind
             The kind.
         """
-        return ScalingKind.IDENTITY
+        return ScalingKind.SAMPLE_WISE
 
     @property
     @override
@@ -52,30 +72,30 @@ class NoScalingParameters(ScalingParameters):
         Returns
         -------
         tuple[str, ...]
-            No attributes, because nothing is learned.
+            The attribute names.
         """
-        return ()
+        return ("n_features_in_",)
 
     @override
-    def build_transformer(self) -> FunctionTransformer:
+    def build_transformer(self) -> Normalizer:
         """
-        Build an identity transformer.
+        Build an unfitted transformer.
 
         Returns
         -------
-        FunctionTransformer
+        Normalizer
             The transformer.
         """
-        return FunctionTransformer()
+        return Normalizer(norm=self.norm.value)
 
     @override
-    def build_scaler(self) -> InvertibleScaler:
+    def build_scaler(self) -> Scaler:
         """
         Build an unfitted scaler.
 
         Returns
         -------
-        InvertibleScaler
+        Scaler
             The scaler.
         """
-        return InvertibleScaler(self, self.build_transformer())
+        return Scaler(self, self.build_transformer())

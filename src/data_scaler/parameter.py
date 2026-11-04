@@ -8,9 +8,10 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 
 from .parameter_codec import ParameterCodec
+from .predictor import PredictorLike
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
-from .transformers import PredictorLike, TransformerLike
+from .transformer import TransformerLike
 from .types import JsonValue
 
 if TYPE_CHECKING:

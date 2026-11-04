@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .invertible_scaler import InvertibleScaler
-from .scaling_configuration import ScalingConfigurationLike
-from .transformers import IncrementalTransformerLike
-from .types import NumericArray
+from ..scaling_configuration import ScalingConfigurationLike
+from ..transformers import IncrementalTransformerLike
+from ..types import NumericArray
+from .invertible import InvertibleScaler
 
 
 class IncrementalScaler(InvertibleScaler):

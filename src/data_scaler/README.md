@@ -13,13 +13,15 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 | [scaling_kind.py](./scaling_kind.py) | `ScalingKind`, what a strategy does to the values. |
 | [scaling_strategy.py](./scaling_strategy.py) | `ScalingStrategy`, the stable identifier of a strategy in saved scalers. |
 | [parameter.py](./parameter.py) | `ScalingParameters`, the abstract base class of configurations. |
+| [parameters/](./parameters/README.md) | Per-strategy parameter classes. |
+| [options/](./options/README.md) | Enums for the fields of parameter classes. |
 | [parameter_codec.py](./parameter_codec.py) | `ParameterCodec`, which converts parameters to and from JSON values. |
 | [scaling_configuration.py](./scaling_configuration.py) | `ScalingConfigurationLike`, what a scaler needs from its configuration. |
 | [scaler.py](./scaler.py) | `Scaler`, with strict `fit`, `transform`, and `save`. |
-| [invertible_scaler.py](./invertible_scaler.py) | `InvertibleScaler`, which adds `inverse_transform`. |
-| [incremental_scaler.py](./incremental_scaler.py) | `IncrementalScaler`, which adds `partial_fit`. |
+| [scalers/](./scalers/README.md) | Scalers with more capabilities. |
 | [scaler_state.py](./scaler_state.py) | `ScalerState`, the fitted statistics in a pickle-free archive. |
 | [scaler_loader.py](./scaler_loader.py) | `ScalerLoader`, which restores fitted scalers. |
 | [feature_scaling.py](./feature_scaling.py) | `FeatureScaling` enum, a shorthand for strategies with default parameters. |
-| [transformers/](./transformers/README.md) | Structural types of wrapped estimators. |
-| [methods/](./methods/README.md) | Per-strategy parameter classes. |
+| [transformer.py](./transformer.py) | `TransformerLike`, the structural type of wrapped transformers. |
+| [transformers/](./transformers/README.md) | Structural types of transformers with more capabilities. |
+| [predictor.py](./predictor.py) | `PredictorLike`, the estimators that a scaling pipeline can end with. |

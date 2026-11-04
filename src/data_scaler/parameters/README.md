@@ -1,4 +1,4 @@
-# methods
+# parameters
 
 ## Overview
 
@@ -13,6 +13,6 @@ Parameter classes for each scaling strategy. Every parameter class is frozen, va
 | [min_max.py](./min_max.py) | `MinMaxScalingParameters`, a fixed range. |
 | [max_abs.py](./max_abs.py) | `MaxAbsScalingParameters`, division by the largest absolute value. |
 | [robust.py](./robust.py) | `RobustScalingParameters`, median and quantile range. |
-| [unit_norm.py](./unit_norm.py) | `UnitNormScalingParameters` and `Norm`, per-sample length. |
-| [quantile.py](./quantile.py) | `QuantileScalingParameters` and `OutputDistribution`, the empirical distribution. |
-| [power.py](./power.py) | `PowerScalingParameters` and `PowerMethod`, a learned power transformation. |
+| [unit_norm.py](./unit_norm.py) | `UnitNormScalingParameters`, per-sample length. |
+| [quantile.py](./quantile.py) | `QuantileScalingParameters`, the empirical distribution. |
+| [power.py](./power.py) | `PowerScalingParameters`, a learned power transformation. |

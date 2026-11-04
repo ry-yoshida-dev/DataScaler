@@ -7,7 +7,7 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ..types import NumericArray
+from .types import NumericArray
 
 
 class PredictorLike[PredictionT: np.generic](Protocol):

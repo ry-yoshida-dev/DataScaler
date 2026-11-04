@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .scaler import Scaler
-from .scaling_configuration import ScalingConfigurationLike
-from .transformers import InvertibleTransformerLike
-from .types import FloatArray, NumericArray
+from ..scaler import Scaler
+from ..scaling_configuration import ScalingConfigurationLike
+from ..transformers import InvertibleTransformerLike
+from ..types import FloatArray, NumericArray
 
 
 class InvertibleScaler(Scaler):

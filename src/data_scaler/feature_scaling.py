@@ -5,7 +5,8 @@ from enum import Enum
 import numpy as np
 from sklearn.pipeline import Pipeline
 
-from .methods import (
+from .parameter import ScalingParameters
+from .parameters import (
     MaxAbsScalingParameters,
     MinMaxScalingParameters,
     NoScalingParameters,
@@ -13,10 +14,9 @@ from .methods import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
-from .parameter import ScalingParameters
+from .predictor import PredictorLike
 from .scaler import Scaler
 from .scaling_kind import ScalingKind
-from .transformers import PredictorLike
 
 
 class FeatureScaling(Enum):

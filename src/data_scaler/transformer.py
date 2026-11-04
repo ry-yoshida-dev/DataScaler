@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..types import FloatArray, NumericArray
+from .types import FloatArray, NumericArray
 
 
 class TransformerLike(Protocol):

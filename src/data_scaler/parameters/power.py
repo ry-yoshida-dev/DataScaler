@@ -1,33 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import override
 
 import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, PowerTransformer, StandardScaler
 
-from ..invertible_scaler import InvertibleScaler
+from ..options import PowerMethod
 from ..parameter import ScalingParameters
+from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
-
-
-class PowerMethod(Enum):
-    """
-    Family of power transformations.
-
-    Attributes
-    ----------
-    YEO_JOHNSON
-        Works with any values.
-    BOX_COX
-        Requires strictly positive values.
-    """
-
-    YEO_JOHNSON = "yeo-johnson"
-    BOX_COX = "box-cox"
 
 
 @dataclass(frozen=True, kw_only=True)

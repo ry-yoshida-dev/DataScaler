@@ -13,7 +13,7 @@ from sklearn.pipeline import Pipeline
 from .feature_validator import FeatureValidator
 from .scaler_state import ScalerState
 from .scaling_configuration import ScalingConfigurationLike
-from .transformers import TransformerLike
+from .transformer import TransformerLike
 from .types import FloatArray, NumericArray
 
 

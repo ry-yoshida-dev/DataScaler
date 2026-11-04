@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ..transformer import TransformerLike
 from ..types import FloatArray, NumericArray
-from .transformer import TransformerLike
 
 
 class InvertibleTransformerLike(TransformerLike, Protocol):
