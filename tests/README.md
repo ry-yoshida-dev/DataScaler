@@ -11,6 +11,7 @@ Unit tests for the `data_scaler` package.
 | [`test_feature_scaling.py`](test_feature_scaling.py) | Tests for each `FeatureScaling` shorthand. |
 | [`test_scaling_kind.py`](test_scaling_kind.py) | Tests that `kind` follows the configuration and matches the actual transformation. |
 | [`test_parameters.py`](test_parameters.py) | Tests for the effects and validation of each parameter class. |
+| [`test_properties.py`](test_properties.py) | Properties of all strategies over generated matrices, such as that whatever was learned can be saved and loaded. |
 | [`test_scaler.py`](test_scaler.py) | Tests for input checks, missing values, inverses, batches, persistence, impossible statistics, output checks, atomic saves, and pipelines across all strategies. |
 
 ## Examples

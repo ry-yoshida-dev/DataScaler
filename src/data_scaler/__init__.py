@@ -12,7 +12,9 @@ from .parameters import (
     UnitNormScalingParameters,
 )
 from .pipeline import PipelineLike
+from .pipelines import ProbabilisticPipelineLike, ScoringPipelineLike
 from .predictor import PredictorLike
+from .predictors import ProbabilisticPredictorLike, ScoringPredictorLike
 from .scaler import Scaler
 from .scaler_loader import ScalerLoader
 from .scaler_state import ScalerState
@@ -42,6 +44,8 @@ __all__ = [
     "PowerMethod",
     "PowerScalingParameters",
     "PredictorLike",
+    "ProbabilisticPipelineLike",
+    "ProbabilisticPredictorLike",
     "QuantileScalingParameters",
     "RobustScalingParameters",
     "Scaler",
@@ -51,6 +55,8 @@ __all__ = [
     "ScalingKind",
     "ScalingParameters",
     "ScalingStrategy",
+    "ScoringPipelineLike",
+    "ScoringPredictorLike",
     "StandardScalingParameters",
     "StatisticConstraint",
     "StatisticShape",

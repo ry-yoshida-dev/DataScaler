@@ -4,7 +4,7 @@ import math
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,7 +13,9 @@ from sklearn.pipeline import Pipeline
 from .parameter_codec import ParameterCodec
 from .parameter_validator import ParameterValidator
 from .pipeline import PipelineLike
+from .pipelines import ProbabilisticPipelineLike, ScoringPipelineLike
 from .predictor import PredictorLike
+from .predictors import ProbabilisticPredictorLike, ScoringPredictorLike
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
 from .statistic_spec import StatisticSpec
@@ -171,6 +173,21 @@ class ScalingParameters(ABC):
             The scaler.
         """
 
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: ProbabilisticPredictorLike[PredictionT]
+    ) -> ProbabilisticPipelineLike[PredictionT]: ...
+
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: ScoringPredictorLike[PredictionT]
+    ) -> ScoringPipelineLike[PredictionT]: ...
+
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: PredictorLike[PredictionT]
+    ) -> PipelineLike[PredictionT]: ...
+
     def build_pipeline[PredictionT: np.generic](
         self, estimator: PredictorLike[PredictionT]
     ) -> PipelineLike[PredictionT]:
@@ -185,7 +202,8 @@ class ScalingParameters(ABC):
         Returns
         -------
         PipelineLike[PredictionT]
-            A pipeline with a ``scaler`` step and an ``estimator`` step.
+            A pipeline with a ``scaler`` step and an ``estimator`` step, which also
+            offers ``score`` and ``predict_proba`` when the estimator does.
         """
         return Pipeline(
             [("scaler", self.build_transformer()), ("estimator", estimator)]

@@ -28,7 +28,8 @@ class FeatureValidator:
         Raises
         ------
         TypeError
-            If the features are not a numeric NumPy array.
+            If the features are not a numeric NumPy array, or are an array type whose
+            semantics scikit-learn would drop, such as a masked array.
         ValueError
             If the features are not 2-D, are empty, contain infinity, or contain
             NaN when it is not allowed.
@@ -36,6 +37,10 @@ class FeatureValidator:
         if not isinstance(cast(object, X), np.ndarray):
             raise TypeError(
                 f"X must be a NumPy array, got {type(X).__name__}; convert it with np.asarray"
+            )
+        if isinstance(X, np.ma.MaskedArray | np.matrix):
+            raise TypeError(
+                f"X must be a plain NumPy array, got {type(X).__name__}, whose semantics would be lost"
             )
         is_numeric: bool = np.issubdtype(X.dtype, np.integer) or np.issubdtype(
             X.dtype, np.floating
@@ -54,6 +59,23 @@ class FeatureValidator:
             raise ValueError("X must not contain NaN unless is_nan_allowed is set")
 
     @staticmethod
+    def find_unobserved_features(X: NumericArray) -> NDArray[np.intp]:
+        """
+        Find the features that contain only NaN.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix with shape (n_samples, n_features).
+
+        Returns
+        -------
+        NDArray[np.intp]
+            The indices of the features.
+        """
+        return np.flatnonzero(np.isnan(X).all(axis=0))
+
+    @staticmethod
     def require_observed_features(X: NumericArray) -> None:
         """
         Check that every feature has a value to learn from.
@@ -68,7 +90,7 @@ class FeatureValidator:
         ValueError
             If a feature contains only NaN.
         """
-        unobserved: NDArray[np.intp] = np.flatnonzero(np.isnan(X).all(axis=0))
+        unobserved: NDArray[np.intp] = FeatureValidator.find_unobserved_features(X)
         if unobserved.size > 0:
             raise ValueError(
                 f"Features must have an observed value, got only NaN in {unobserved.tolist()}"

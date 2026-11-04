@@ -17,6 +17,7 @@ from sklearn import config_context
 from sklearn.base import clone
 from sklearn.ensemble import IsolationForest
 from sklearn.exceptions import NotFittedError
+from sklearn.linear_model import LogisticRegression, Ridge
 
 from data_scaler import (
     FeatureScaling,
@@ -33,6 +34,7 @@ from data_scaler import (
     PipelineLike,
     PowerMethod,
     PowerScalingParameters,
+    ProbabilisticPipelineLike,
     QuantileScalingParameters,
     RobustScalingParameters,
     Scaler,
@@ -41,6 +43,7 @@ from data_scaler import (
     ScalingKind,
     ScalingParameters,
     ScalingStrategy,
+    ScoringPipelineLike,
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
@@ -142,6 +145,19 @@ class TestStrictInputs(unittest.TestCase):
             StandardScalingParameters().build_scaler().fit_transform(integers)
         )
         self.assertTrue(np.issubdtype(scaled.dtype, np.floating))
+
+    def test_rejects_arrays_whose_semantics_would_be_lost(self) -> None:
+        values: NDArray[np.float64] = np.ones((2, 2))
+        masked: NumericArray = np.ma.array(values, mask=values > 0)
+        for parameters in (NoScalingParameters(), StandardScalingParameters()):
+            with self.subTest(parameters=parameters), self.assertRaises(TypeError):
+                parameters.build_scaler().fit(masked)
+
+    def test_learning_errors_name_the_strategy(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "POWER cannot learn.*strictly positive"
+        ):
+            PowerScalingParameters(method=PowerMethod.BOX_COX).build_scaler().fit(-X)
 
     def test_rejects_what_is_not_an_array(self) -> None:
         for features in ([[1.0, 2.0]], ((1.0, 2.0),), 1.0, None):
@@ -275,11 +291,12 @@ class TestIncremental(unittest.TestCase):
         with self.assertRaises(ValueError):
             StandardScalingParameters().build_scaler().partial_fit(np.array([[np.nan]]))
 
-    def test_rejects_batches_with_an_unobserved_feature(self) -> None:
+    def test_later_batches_skip_an_unobserved_feature(self) -> None:
         observed: NDArray[np.float64] = np.array(
             [[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]]
         )
-        unobserved: NDArray[np.float64] = np.array([[4.0, np.nan], [5.0, np.nan]])
+        unobserved: NDArray[np.float64] = np.array([[4.0, np.nan], [50.0, np.nan]])
+        probe: NDArray[np.float64] = np.array([[2.5, 15.0]])
         for parameters in (
             StandardScalingParameters(is_nan_allowed=True),
             MinMaxScalingParameters(is_nan_allowed=True),
@@ -290,10 +307,33 @@ class TestIncremental(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "observed"):
                     scaler.partial_fit(unobserved)
                 scaler.partial_fit(observed)
-                expected: FloatArray = scaler.transform(observed)
-                with self.assertRaisesRegex(ValueError, "observed"):
-                    scaler.partial_fit(unobserved)
-                np.testing.assert_array_equal(scaler.transform(observed), expected)
+                scaler.partial_fit(unobserved)
+                reference: IncrementalScaler = parameters.build_scaler()
+                reference.fit(np.vstack([observed, unobserved]))
+                np.testing.assert_allclose(
+                    scaler.transform(probe), reference.transform(probe)
+                )
+                _ = ScalerLoader.from_state(scaler.to_state())
+
+    def test_samples_with_missing_values_can_arrive_one_at_a_time(self) -> None:
+        samples: NDArray[np.float64] = np.array(
+            [[1.0, 2.0], [3.0, np.nan], [np.nan, 6.0], [7.0, 8.0]]
+        )
+        for parameters in (
+            StandardScalingParameters(is_nan_allowed=True),
+            StandardScalingParameters(is_nan_allowed=True, is_scaled=False),
+            MinMaxScalingParameters(is_nan_allowed=True),
+            MaxAbsScalingParameters(is_nan_allowed=True),
+        ):
+            with self.subTest(parameters=parameters):
+                scaler: IncrementalScaler = parameters.build_scaler()
+                for index in range(len(samples)):
+                    scaler.partial_fit(samples[index : index + 1])
+                reference: IncrementalScaler = parameters.build_scaler()
+                reference.fit(samples)
+                np.testing.assert_allclose(
+                    scaler.transform(samples), reference.transform(samples)
+                )
 
     def test_overflowing_batch_unfits_the_scaler(self) -> None:
         huge: NDArray[np.float64] = np.array([[1.7e308, 1.0], [-1.7e308, 2.0]])
@@ -676,6 +716,65 @@ class TestPersistence(unittest.TestCase):
         restored.partial_fit(batch)
         np.testing.assert_array_equal(state.arrays["n_samples_seen_"], counts)
 
+    def test_states_are_immutable_however_they_were_created(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(X)
+        state: ScalerState = scaler.to_state()
+        with tempfile.TemporaryDirectory() as directory:
+            path: Path = Path(directory) / "state.npz"
+            state.save(path)
+            loaded: ScalerState = ScalerState.load(path)
+        source: NDArray[np.float64] = np.ones(3)
+        built: ScalerState = replace(state, arrays={**state.arrays, "mean_": source})
+        source[0] = 9.0
+        self.assertEqual(built.arrays["mean_"][0], 1.0)
+        for candidate in (state, loaded, built):
+            with self.subTest(candidate=candidate):
+                self.assertFalse(candidate.arrays["mean_"].flags.writeable)
+                with self.assertRaises(TypeError):
+                    cast(dict[str, JsonValue], candidate.parameters)["x"] = 1
+                with self.assertRaises(TypeError):
+                    cast(dict[str, NDArray[np.generic]], candidate.arrays)["x"] = source
+
+    def test_version_warning_points_at_the_caller(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(X)
+        state: ScalerState = replace(scaler.to_state(), scikit_learn_version="0.0")
+        with self.assertWarns(UserWarning) as caught:
+            _ = ScalerLoader.from_state(state)
+        self.assertEqual(caught.filename, __file__)
+
+    def test_saving_again_keeps_the_version_that_learned_the_statistics(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(X)
+        state: ScalerState = replace(scaler.to_state(), scikit_learn_version="0.0")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            restored: IncrementalScaler = ScalerLoader.from_state(
+                state, IncrementalScaler
+            )
+        self.assertEqual(restored.to_state().scikit_learn_version, "0.0")
+        restored.partial_fit(X)
+        self.assertEqual(restored.to_state().scikit_learn_version, "0.0")
+        restored.fit(X)
+        self.assertNotEqual(restored.to_state().scikit_learn_version, "0.0")
+
+    def test_rejects_compressed_members(self) -> None:
+        source: IncrementalScaler = StandardScalingParameters().build_scaler()
+        source.fit(X)
+        with tempfile.TemporaryDirectory() as directory:
+            path: Path = Path(directory) / "scaler.npz"
+            source.save(path)
+            with zipfile.ZipFile(path) as archive:
+                members: dict[str, bytes] = {
+                    name: archive.read(name) for name in archive.namelist()
+                }
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for name, content in members.items():
+                    archive.writestr(name, content)
+            with self.assertRaisesRegex(ValueError, "compressed"):
+                _ = ScalerLoader.load(path)
+
     def test_state_statistics_are_read_only(self) -> None:
         scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
         scaler.fit(X)
@@ -892,6 +991,20 @@ class TestScikitLearnInterop(unittest.TestCase):
                 )
                 copied: PipelineLike[np.integer] = clone(pipeline)
                 self.assertEqual(copied.fit(X).predict(X).shape, (300,))
+
+    def test_pipelines_offer_what_their_estimator_offers(self) -> None:
+        y: NDArray[np.int64] = (X[:, 0] > np.median(X[:, 0])).astype(np.int64)
+        for parameters in (StandardScalingParameters(), FeatureScaling.MIN_MAX):
+            with self.subTest(parameters=parameters):
+                classifier: ProbabilisticPipelineLike[np.int64] = (
+                    parameters.build_pipeline(LogisticRegression()).fit(X, y)
+                )
+                self.assertEqual(classifier.predict_proba(X).shape, (X.shape[0], 2))
+                self.assertGreater(classifier.score(X, y), 0.5)
+                regressor: ScoringPipelineLike[np.float64] = parameters.build_pipeline(
+                    Ridge()
+                ).fit(X, X[:, 0])
+                self.assertGreater(regressor.score(X, X[:, 0]), 0.5)
 
     def test_shorthand_builds_the_same_steps(self) -> None:
         pipeline: PipelineLike[np.integer] = FeatureScaling.ROBUST.build_pipeline(

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import os
-import zlib
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Final, cast
 from uuid import uuid4
-from zipfile import BadZipFile
+from zipfile import ZIP_STORED, BadZipFile, ZipFile
 
 import numpy as np
 from numpy.lib.npyio import NpzFile
@@ -46,6 +47,11 @@ class ScalerState:
     ValueError
         If the number of features is not positive or a statistic is not a finite
         real number.
+
+    Notes
+    -----
+    A state holds read-only copies of what it was built from, so it cannot change
+    once it exists.
     """
 
     strategy: ScalingStrategy
@@ -58,6 +64,7 @@ class ScalerState:
     def __post_init__(self) -> None:
         if self.n_features < 1:
             raise ValueError(f"n_features must be positive, got {self.n_features}")
+        arrays: dict[str, NDArray[np.generic]] = {}
         for name, array in self.arrays.items():
             is_real: bool = np.issubdtype(array.dtype, np.integer) or np.issubdtype(
                 array.dtype, np.floating
@@ -66,6 +73,12 @@ class ScalerState:
                 raise ValueError(f"{name} must be real, got dtype {array.dtype}")
             if not np.isfinite(array).all():
                 raise ValueError(f"{name} must be finite")
+            arrays[name] = np.array(array)
+            arrays[name].setflags(write=False)
+        object.__setattr__(self, "arrays", MappingProxyType(arrays))
+        object.__setattr__(
+            self, "parameters", MappingProxyType(deepcopy(dict(self.parameters)))
+        )
 
     def save(self, path: Path) -> None:
         """
@@ -170,6 +183,14 @@ class ScalerState:
                 if not isinstance(loaded, NpzFile):
                     raise ValueError(f"{path} is not a scaler state")
                 with loaded as archive:
+                    # Saving never compresses, so nothing untrusted reaches a decompressor.
+                    if any(
+                        info.compress_type != ZIP_STORED
+                        for info in cast(ZipFile, archive.zip).infolist()
+                    ):
+                        raise ValueError(
+                            f"{path} is damaged: it has compressed members"
+                        )
                     if METADATA_KEY not in archive.files:
                         raise ValueError(f"{path} is not a scaler state")
                     metadata: JsonValue = cast(
@@ -188,7 +209,6 @@ class ScalerState:
                 NotImplementedError,
                 OSError,
                 RuntimeError,
-                zlib.error,
             ) as error:
                 raise ValueError(f"{path} is damaged: {error}") from error
         return metadata, arrays

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import cast
+from typing import Final, cast
 
 import numpy as np
 import sklearn
@@ -15,6 +15,8 @@ from .scaler_state import ScalerState
 from .scaling_configuration import ScalingConfigurationLike
 from .transformer import TransformerLike
 from .types import FloatArray, NumericArray
+
+PACKAGE_DIRECTORY: Final[str] = str(Path(__file__).parent)
 
 
 class Scaler:
@@ -40,6 +42,8 @@ class Scaler:
         # The global configuration of scikit-learn could otherwise return DataFrames.
         _ = self._transformer.set_output(transform="default")
         self._n_features: int | None = None
+        # A loaded scaler keeps the version that its statistics come from.
+        self._scikit_learn_version: str = sklearn.__version__
 
     @property
     def parameters(self) -> ScalingConfigurationLike:
@@ -95,9 +99,7 @@ class Scaler:
         """
         self._validate(X)
         self._validate_observed(X)
-        self._n_features = None
-        _ = self._transformer.fit(X)
-        self._record_fitted(X)
+        self._learn_from_scratch(X)
 
     def transform(self, X: NumericArray) -> FloatArray:
         """
@@ -170,8 +172,6 @@ class Scaler:
         """
         n_features: int = self.n_features
         arrays: dict[str, NDArray[np.generic]] = self._read_statistics()
-        for array in arrays.values():
-            array.setflags(write=False)
         empty_attributes: list[str] = [
             path for path in self._parameters.state_attributes if path not in arrays
         ]
@@ -180,7 +180,7 @@ class Scaler:
             parameters=self._parameters.encode(),
             n_features=n_features,
             arrays=arrays,
-            scikit_learn_version=sklearn.__version__,
+            scikit_learn_version=self._scikit_learn_version,
             empty_attributes=tuple(empty_attributes),
         )
 
@@ -205,7 +205,7 @@ class Scaler:
             warnings.warn(
                 f"State saved with scikit-learn {state.scikit_learn_version} is loaded with {sklearn.__version__}, whose fitted attributes may differ",
                 UserWarning,
-                stacklevel=2,
+                skip_file_prefixes=(PACKAGE_DIRECTORY,),
             )
         for path, array in state.arrays.items():
             # A copy keeps this scaler apart from the state. Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
@@ -214,6 +214,7 @@ class Scaler:
         for path in state.empty_attributes:
             self._write_statistic(path, None)
         self._n_features = state.n_features
+        self._scikit_learn_version = state.scikit_learn_version
 
     def save(self, path: Path) -> None:
         """
@@ -230,6 +231,17 @@ class Scaler:
             If the scaler has not been fitted.
         """
         self.to_state().save(path)
+
+    def _learn_from_scratch(self, X: NumericArray) -> None:
+        self._n_features = None
+        self._scikit_learn_version = sklearn.__version__
+        try:
+            _ = self._transformer.fit(X)
+        except ValueError as error:
+            raise ValueError(
+                f"Strategy {self._parameters.strategy.name} cannot learn from these features, which may be too large or degenerate: {error}"
+            ) from error
+        self._record_fitted(X)
 
     def _record_fitted(self, X: NumericArray) -> None:
         # scikit-learn has already overwritten what it knew, so only a new fit recovers.

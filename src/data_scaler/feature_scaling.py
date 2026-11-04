@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import overload
 
 import numpy as np
 
@@ -14,7 +15,9 @@ from .parameters import (
     UnitNormScalingParameters,
 )
 from .pipeline import PipelineLike
+from .pipelines import ProbabilisticPipelineLike, ScoringPipelineLike
 from .predictor import PredictorLike
+from .predictors import ProbabilisticPredictorLike, ScoringPredictorLike
 from .scaler import Scaler
 from .scaling_kind import ScalingKind
 
@@ -95,6 +98,21 @@ class FeatureScaling(Enum):
         """
         return self.parameters.build_scaler()
 
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: ProbabilisticPredictorLike[PredictionT]
+    ) -> ProbabilisticPipelineLike[PredictionT]: ...
+
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: ScoringPredictorLike[PredictionT]
+    ) -> ScoringPipelineLike[PredictionT]: ...
+
+    @overload
+    def build_pipeline[PredictionT: np.generic](
+        self, estimator: PredictorLike[PredictionT]
+    ) -> PipelineLike[PredictionT]: ...
+
     def build_pipeline[PredictionT: np.generic](
         self, estimator: PredictorLike[PredictionT]
     ) -> PipelineLike[PredictionT]:
@@ -109,6 +127,7 @@ class FeatureScaling(Enum):
         Returns
         -------
         PipelineLike[PredictionT]
-            A pipeline with a ``scaler`` step and an ``estimator`` step.
+            A pipeline with a ``scaler`` step and an ``estimator`` step, which also
+            offers ``score`` and ``predict_proba`` when the estimator does.
         """
         return self.parameters.build_pipeline(estimator)

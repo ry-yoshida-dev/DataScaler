@@ -29,4 +29,6 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 | [transformer.py](./transformer.py) | `TransformerLike`, the structural type of wrapped transformers. |
 | [transformers/](./transformers/README.md) | Structural types of transformers with more capabilities. |
 | [pipeline.py](./pipeline.py) | `PipelineLike`, the structural type of a scaling pipeline. |
+| [pipelines/](./pipelines/README.md) | Structural types of pipelines with more capabilities. |
 | [predictor.py](./predictor.py) | `PredictorLike`, the estimators that a scaling pipeline can end with. |
+| [predictors/](./predictors/README.md) | Structural types of estimators with more capabilities. |
