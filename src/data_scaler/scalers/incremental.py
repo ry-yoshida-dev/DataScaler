@@ -38,15 +38,19 @@ class IncrementalScaler(InvertibleScaler):
         Raises
         ------
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
-            If the features are invalid or their number differs from earlier batches.
+            If the features are invalid, their number differs from earlier batches,
+            a feature of the batch has no observed value, or a statistic overflows,
+            which also discards what was learned.
         """
         if self._n_features is None:
             self._validate(X)
+            self._validate_observed(X)
             # A failed fit may have left statistics behind, which fit discards.
             _ = self._transformer.fit(X)
         else:
             self._validate_fitted_shape(X)
+            self._validate_observed(X)
             _ = self._incremental_transformer.partial_fit(X)
         self._record_fitted(X)

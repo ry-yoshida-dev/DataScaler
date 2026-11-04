@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol
+
+import numpy as np
+from numpy.typing import NDArray
 
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
+from .statistic_shape import StatisticShape
 from .types import JsonValue
 
 
@@ -56,14 +61,45 @@ class ScalingConfigurationLike(Protocol):
         ...
 
     @property
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
-            The attribute names, prefixed by ``step.`` inside a pipeline.
+        Mapping[str, StatisticShape]
+            The shape of each attribute by name, prefixed by ``step.`` inside a
+            pipeline.
+        """
+        ...
+
+    @property
+    def empty_state_attributes(self) -> frozenset[str]:
+        """
+        Get the state attributes that this configuration leaves empty after fitting.
+
+        Returns
+        -------
+        frozenset[str]
+            The attribute names.
+        """
+        ...
+
+    def validate_statistics(
+        self, statistics: Mapping[str, NDArray[np.generic]]
+    ) -> None:
+        """
+        Check what this strategy requires of its fitted statistics together.
+
+        Parameters
+        ----------
+        statistics : Mapping[str, NDArray[np.generic]]
+            The statistics by attribute name, whose shapes are already checked.
+
+        Raises
+        ------
+        ValueError
+            If the statistics cannot come from fitting this strategy.
         """
         ...
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 from enum import Enum
 
 import numpy as np
-from sklearn.pipeline import Pipeline
 
 from .parameter import ScalingParameters
 from .parameters import (
@@ -14,6 +13,7 @@ from .parameters import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
+from .pipeline import PipelineLike
 from .predictor import PredictorLike
 from .scaler import Scaler
 from .scaling_kind import ScalingKind
@@ -97,7 +97,7 @@ class FeatureScaling(Enum):
 
     def build_pipeline[PredictionT: np.generic](
         self, estimator: PredictorLike[PredictionT]
-    ) -> Pipeline[PredictionT]:
+    ) -> PipelineLike[PredictionT]:
         """
         Build a pipeline that applies this scaling before an estimator.
 
@@ -108,7 +108,7 @@ class FeatureScaling(Enum):
 
         Returns
         -------
-        Pipeline[PredictionT]
+        PipelineLike[PredictionT]
             A pipeline with a ``scaler`` step and an ``estimator`` step.
         """
         return self.parameters.build_pipeline(estimator)

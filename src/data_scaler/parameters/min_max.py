@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import override
 
@@ -10,6 +11,7 @@ from ..parameter import ScalingParameters
 from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_shape import StatisticShape
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -68,24 +70,24 @@ class MinMaxScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
-            The attribute names.
+        Mapping[str, StatisticShape]
+            The shape of each attribute by name.
         """
-        return (
-            "min_",
-            "scale_",
-            "data_min_",
-            "data_max_",
-            "data_range_",
-            "n_samples_seen_",
-            "n_features_in_",
-        )
+        return {
+            "min_": StatisticShape.PER_FEATURE,
+            "scale_": StatisticShape.PER_FEATURE,
+            "data_min_": StatisticShape.PER_FEATURE,
+            "data_max_": StatisticShape.PER_FEATURE,
+            "data_range_": StatisticShape.PER_FEATURE,
+            "n_samples_seen_": StatisticShape.SCALAR,
+            "n_features_in_": StatisticShape.SCALAR,
+        }
 
     @override
     def build_transformer(self) -> MinMaxScaler:

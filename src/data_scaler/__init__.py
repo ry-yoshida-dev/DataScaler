@@ -11,6 +11,7 @@ from .parameters import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
+from .pipeline import PipelineLike
 from .predictor import PredictorLike
 from .scaler import Scaler
 from .scaler_loader import ScalerLoader
@@ -19,6 +20,7 @@ from .scalers import IncrementalScaler, InvertibleScaler
 from .scaling_configuration import ScalingConfigurationLike
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
+from .statistic_shape import StatisticShape
 from .transformer import TransformerLike
 
 __all__ = [
@@ -30,6 +32,7 @@ __all__ = [
     "NoScalingParameters",
     "Norm",
     "OutputDistribution",
+    "PipelineLike",
     "PowerMethod",
     "PowerScalingParameters",
     "PredictorLike",
@@ -43,6 +46,7 @@ __all__ = [
     "ScalingParameters",
     "ScalingStrategy",
     "StandardScalingParameters",
+    "StatisticShape",
     "TransformerLike",
     "UnitNormScalingParameters",
 ]

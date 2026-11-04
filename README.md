@@ -67,10 +67,11 @@ Save a fitted scaler and load it elsewhere, without pickle:
 ```python
 from pathlib import Path
 
-from data_scaler import ScalerLoader
+from data_scaler import IncrementalScaler, ScalerLoader
 
 scaler.save(Path("scaler.npz"))
-restored = ScalerLoader.load(Path("scaler.npz"))
+restored = ScalerLoader.load(Path("scaler.npz"), IncrementalScaler)
+restored.partial_fit(batch)
 ```
 
 Prevent leakage during cross-validation by making scaling part of the estimator:
@@ -81,12 +82,15 @@ pipeline = RobustScalingParameters().build_pipeline(estimator)
 
 ## Notes
 
+- `Scaler` accepts NumPy arrays only and raises `TypeError` for anything else, such as lists or DataFrames. Convert them with `np.asarray`.
 - Inputs are never modified, and outputs never share memory with inputs.
-- `Scaler` rejects NaN unless `is_nan_allowed` is set; then NaN marks missing values, which are ignored while learning and stay NaN in the output. Infinity is always rejected. `fit` rejects a feature with only NaN, because there is nothing to learn from.
+- `Scaler` rejects NaN unless `is_nan_allowed` is set; then NaN marks missing values, which are ignored while learning and stay NaN in the output. Infinity is always rejected. `fit` and `partial_fit` reject a feature with only NaN in the given samples, because scikit-learn would lose the statistics of that feature for good. They also reject features so large that a statistic overflows; the scaler is then unfitted, because what it had learned is lost.
 - Pipelines and `build_transformer` use the scikit-learn transformers directly, without the checks of `Scaler`.
 - `partial_fit` and `inverse_transform` exist only on scalers that support them, so the type checker rejects other uses.
 - `QuantileScalingParameters.n_quantiles` must not exceed the number of training samples, or scikit-learn warns and reduces it.
 - `kind` on `FeatureScaling` and on every parameter class tells what the configured strategy does to the values, as a `ScalingKind`, for callers whose results depend on it.
+- Loading rejects damaged files and statistics that a fitted scaler cannot have, such as wrong shapes, non-finite values, non-positive scales or sample counts, negative variances, statistics missing for the configuration, or unordered quantiles, with `ValueError`. Passing a scaler type to `ScalerLoader.load` lets the type checker see its capabilities, and raises `TypeError` when the saved strategy does not offer them.
+- `build_pipeline` is typed as `PipelineLike`, which keeps the prediction type because scikit-learn ships no type information. At runtime it returns a `sklearn.pipeline.Pipeline`.
 - Saved scalers depend on the fitted attributes of scikit-learn, whose meaning could change between versions, so loading warns when the version differs from the one that saved them.
 - Parameter fields are keyword-only.
 - `FeatureScaling.build_scaler` returns the base `Scaler`. Use a parameter class when the type checker should see `inverse_transform` or `partial_fit`.

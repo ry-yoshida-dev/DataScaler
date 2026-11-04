@@ -6,6 +6,10 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[options]
+exclude-newer = "2026-10-28T22:00:24.408116Z"
+exclude-newer-span = "P7D"
+
 [[package]]
 name = "ast-serialize"
 version = "0.13.1"
@@ -125,10 +129,10 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "basedpyright" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
+    { name = "basedpyright", specifier = ">=1.40.2" },
+    { name = "mypy", specifier = ">=2.4.1" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "ruff", specifier = ">=0.17.3" },
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import override
 
@@ -9,6 +10,7 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_shape import StatisticShape
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -45,16 +47,16 @@ class NoScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
+        Mapping[str, StatisticShape]
             No attributes, because nothing is learned.
         """
-        return ()
+        return {}
 
     @override
     def build_transformer(self) -> FunctionTransformer:

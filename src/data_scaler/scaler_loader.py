@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, overload
 
 from .parameter import ScalingParameters
 from .parameter_codec import ParameterCodec
@@ -36,8 +36,18 @@ class ScalerLoader:
     Restores fitted scalers from their saved state.
     """
 
+    @overload
     @staticmethod
-    def from_state(state: ScalerState) -> Scaler:
+    def from_state(state: ScalerState) -> Scaler: ...
+
+    @overload
+    @staticmethod
+    def from_state[ScalerT: Scaler](
+        state: ScalerState, scaler_type: type[ScalerT]
+    ) -> ScalerT: ...
+
+    @staticmethod
+    def from_state(state: ScalerState, scaler_type: type[Scaler] = Scaler) -> Scaler:
         """
         Rebuild a fitted scaler.
 
@@ -45,6 +55,8 @@ class ScalerLoader:
         ----------
         state : ScalerState
             The state.
+        scaler_type : type[Scaler]
+            The capabilities the caller relies on, which the type checker then sees.
 
         Returns
         -------
@@ -53,6 +65,8 @@ class ScalerLoader:
 
         Raises
         ------
+        TypeError
+            If the strategy of the state does not offer ``scaler_type``.
         ValueError
             If the parameters or attributes do not fit the strategy.
         """
@@ -60,11 +74,23 @@ class ScalerLoader:
             PARAMETER_TYPES[state.strategy], state.parameters
         )
         scaler: Scaler = parameters.build_scaler()
+        if not isinstance(scaler, scaler_type):
+            raise TypeError(
+                f"Strategy {state.strategy.name} builds {type(scaler).__name__}, which does not offer {scaler_type.__name__}"
+            )
         scaler.restore_state(state)
         return scaler
 
+    @overload
     @staticmethod
-    def load(path: Path) -> Scaler:
+    def load(path: Path) -> Scaler: ...
+
+    @overload
+    @staticmethod
+    def load[ScalerT: Scaler](path: Path, scaler_type: type[ScalerT]) -> ScalerT: ...
+
+    @staticmethod
+    def load(path: Path, scaler_type: type[Scaler] = Scaler) -> Scaler:
         """
         Read a fitted scaler written by ``Scaler.save``.
 
@@ -74,6 +100,8 @@ class ScalerLoader:
         ----------
         path : Path
             The file to read.
+        scaler_type : type[Scaler]
+            The capabilities the caller relies on, which the type checker then sees.
 
         Returns
         -------
@@ -82,7 +110,9 @@ class ScalerLoader:
 
         Raises
         ------
+        TypeError
+            If the saved strategy does not offer ``scaler_type``.
         ValueError
             If the file is not a valid scaler state.
         """
-        return ScalerLoader.from_state(ScalerState.load(path))
+        return ScalerLoader.from_state(ScalerState.load(path), scaler_type)

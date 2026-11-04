@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -13,6 +14,7 @@ from sklearn.pipeline import Pipeline
 from .feature_validator import FeatureValidator
 from .scaler_state import ScalerState
 from .scaling_configuration import ScalingConfigurationLike
+from .statistic_shape import StatisticShape
 from .transformer import TransformerLike
 from .types import FloatArray, NumericArray
 
@@ -82,15 +84,14 @@ class Scaler:
         Raises
         ------
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
-            If the features are not a valid matrix for this strategy, or a feature
-            has no observed value.
+            If the features are not a valid matrix for this strategy, a feature has
+            no observed value, or a statistic overflows.
         """
         self._n_features = None
         self._validate(X)
-        if self._parameters.is_nan_allowed:
-            FeatureValidator.require_observed_features(X)
+        self._validate_observed(X)
         _ = self._transformer.fit(X)
         self._record_fitted(X)
 
@@ -113,7 +114,7 @@ class Scaler:
         NotFittedError
             If the scaler has not been fitted.
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
             If the features are invalid or their number differs from fitting.
         """
@@ -137,9 +138,10 @@ class Scaler:
         Raises
         ------
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
-            If the features are not a valid matrix for this strategy.
+            If the features are not a valid matrix for this strategy, a feature has
+            no observed value, or a statistic overflows.
         """
         self.fit(X)
         return self.transform(X)
@@ -151,7 +153,7 @@ class Scaler:
         Returns
         -------
         ScalerState
-            The state, which ScalerLoader can restore.
+            The state, a read-only copy which ScalerLoader can restore.
 
         Raises
         ------
@@ -162,14 +164,13 @@ class Scaler:
         arrays: dict[str, NDArray[np.generic]] = {}
         empty_attributes: list[str] = []
         for path in self._parameters.state_attributes:
-            value: object = cast(
-                object,
-                getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
-            )
+            value: object = self._read_statistic(path)
             if value is None:
                 empty_attributes.append(path)
             else:
-                arrays[path] = np.asarray(value)
+                array: NDArray[np.generic] = np.array(value)
+                array.setflags(write=False)
+                arrays[path] = array
         return ScalerState(
             strategy=self._parameters.strategy,
             parameters=self._parameters.encode(),
@@ -191,8 +192,9 @@ class Scaler:
         Raises
         ------
         ValueError
-            If the state belongs to another configuration or its attributes differ
-            from what this strategy learns.
+            If the state belongs to another configuration, its attributes differ
+            from what this strategy learns, or a statistic has an impossible shape
+            or value.
         """
         self._validate_state(state)
         if state.scikit_learn_version != sklearn.__version__:
@@ -202,8 +204,8 @@ class Scaler:
                 stacklevel=2,
             )
         for path, array in state.arrays.items():
-            # Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
-            value: object = cast(object, array[()])
+            # A copy keeps this scaler apart from the state. Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
+            value: object = cast(object, np.array(array)[()])
             setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], value)
         # scikit-learn tells "fitted without this statistic" from "not fitted" by presence.
         for path in state.empty_attributes:
@@ -227,12 +229,30 @@ class Scaler:
         self.to_state().save(path)
 
     def _record_fitted(self, X: NumericArray) -> None:
+        for path in self._parameters.state_attributes:
+            value: object = self._read_statistic(path)
+            if value is not None and not np.isfinite(np.array(value)).all():
+                # scikit-learn has already overwritten what it knew, so only a new fit recovers.
+                self._n_features = None
+                raise ValueError(
+                    f"Statistic {path} overflowed, because the features are too large to learn from"
+                )
         self._n_features = X.shape[1]
+
+    def _read_statistic(self, path: str) -> object:
+        return cast(
+            object,
+            getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
+        )
 
     def _validate(self, X: NumericArray) -> None:
         FeatureValidator.require_matrix(
             X, is_nan_allowed=self._parameters.is_nan_allowed
         )
+
+    def _validate_observed(self, X: NumericArray) -> None:
+        if self._parameters.is_nan_allowed:
+            FeatureValidator.require_observed_features(X)
 
     def _validate_fitted_shape(self, X: NumericArray) -> None:
         n_features: int = self.n_features
@@ -254,13 +274,32 @@ class Scaler:
             raise ValueError(
                 f"State attributes {sorted(saved)} differ from {sorted(self._parameters.state_attributes)}"
             )
+        empty: frozenset[str] = self._parameters.empty_state_attributes
+        if frozenset(state.empty_attributes) != empty:
+            raise ValueError(
+                f"State leaves {sorted(state.empty_attributes)} empty, but this configuration leaves {sorted(empty)} empty"
+            )
+        shapes: Mapping[str, StatisticShape] = self._parameters.state_attributes
         for path, array in state.arrays.items():
+            if not shapes[path].matches(array.shape, state.n_features):
+                raise ValueError(
+                    f"State {path} has shape {array.shape}, which does not fit {shapes[path].name} with {state.n_features} features"
+                )
             if path.endswith("n_features_in_") and not np.array_equal(
                 array, state.n_features
             ):
                 raise ValueError(
                     f"State {path} disagrees with its {state.n_features} features"
                 )
+            # scikit-learn replaces zero scales with one, so anything else is damage.
+            if path.endswith("scale_") and not np.greater(array, 0).all():
+                raise ValueError(f"State {path} must be positive")
+            # Only observed features are learned from, so every count is at least one.
+            if path.endswith("n_samples_seen_") and not np.greater(array, 0).all():
+                raise ValueError(f"State {path} must be positive")
+            if path.endswith("var_") and np.less(array, 0).any():
+                raise ValueError(f"State {path} must not be negative")
+        self._parameters.validate_statistics(state.arrays)
 
     def _resolve_owner(self, path: str) -> object:
         if "." not in path or not isinstance(self._transformer, Pipeline):

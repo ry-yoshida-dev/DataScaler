@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
+from zipfile import BadZipFile
 
 import numpy as np
 from numpy.lib.npyio import NpzFile
@@ -40,7 +42,8 @@ class ScalerState:
     Raises
     ------
     ValueError
-        If the number of features is not positive or a statistic is not numeric.
+        If the number of features is not positive or a statistic is not a finite
+        real number.
     """
 
     strategy: ScalingStrategy
@@ -54,8 +57,13 @@ class ScalerState:
         if self.n_features < 1:
             raise ValueError(f"n_features must be positive, got {self.n_features}")
         for name, array in self.arrays.items():
-            if not np.issubdtype(array.dtype, np.number):
-                raise ValueError(f"{name} must be numeric, got dtype {array.dtype}")
+            is_real: bool = np.issubdtype(array.dtype, np.integer) or np.issubdtype(
+                array.dtype, np.floating
+            )
+            if not is_real:
+                raise ValueError(f"{name} must be real, got dtype {array.dtype}")
+            if not np.isfinite(array).all():
+                raise ValueError(f"{name} must be finite")
 
     def save(self, path: Path) -> None:
         """
@@ -104,23 +112,9 @@ class ScalerState:
         ValueError
             If the file is not a scaler state of a supported format version.
         """
-        loaded: NpzFile[np.generic] | NDArray[np.generic] = cast(
-            NpzFile[np.generic] | NDArray[np.generic],
-            np.load(path, allow_pickle=False),
-        )
-        if not isinstance(loaded, NpzFile):
-            raise ValueError(f"{path} is not a scaler state")
-        with loaded as archive:
-            if METADATA_KEY not in archive.files:
-                raise ValueError(f"{path} is not a scaler state")
-            metadata: JsonValue = cast(
-                JsonValue, json.loads(str(archive[METADATA_KEY]))
-            )
-            arrays: dict[str, NDArray[np.generic]] = {
-                name: np.asarray(archive[name])
-                for name in archive.files
-                if name != METADATA_KEY
-            }
+        metadata: JsonValue
+        arrays: dict[str, NDArray[np.generic]]
+        metadata, arrays = ScalerState._read_archive(path)
         if not isinstance(metadata, dict):
             raise ValueError(f"{path} is not a scaler state")
         version: JsonValue = metadata.get("format_version")
@@ -153,3 +147,38 @@ class ScalerState:
             scikit_learn_version=scikit_learn_version,
             empty_attributes=empty_names,
         )
+
+    @staticmethod
+    def _read_archive(path: Path) -> tuple[JsonValue, dict[str, NDArray[np.generic]]]:
+        # np.load leaves a file it opened itself open when the archive is damaged.
+        with path.open("rb") as file:
+            try:
+                loaded: NpzFile[np.generic] | NDArray[np.generic] = cast(
+                    NpzFile[np.generic] | NDArray[np.generic],
+                    np.load(file, allow_pickle=False),
+                )
+                if not isinstance(loaded, NpzFile):
+                    raise ValueError(f"{path} is not a scaler state")
+                with loaded as archive:
+                    if METADATA_KEY not in archive.files:
+                        raise ValueError(f"{path} is not a scaler state")
+                    metadata: JsonValue = cast(
+                        JsonValue, json.loads(str(archive[METADATA_KEY]))
+                    )
+                    arrays: dict[str, NDArray[np.generic]] = {
+                        name: np.asarray(archive[name])
+                        for name in archive.files
+                        if name != METADATA_KEY
+                    }
+            # A damaged archive surfaces as whatever the zip and NumPy readers trip over.
+            except (
+                BadZipFile,
+                EOFError,
+                MemoryError,
+                NotImplementedError,
+                OSError,
+                RuntimeError,
+                zlib.error,
+            ) as error:
+                raise ValueError(f"{path} is damaged: {error}") from error
+        return metadata, arrays

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import override
+from typing import cast, override
 
+import numpy as np
+from numpy.typing import NDArray
 from sklearn.preprocessing import QuantileTransformer
 
 from ..options import OutputDistribution
@@ -10,6 +13,8 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_shape import StatisticShape
+from ..types import FloatArray
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -87,16 +92,54 @@ class QuantileScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
-            The attribute names.
+        Mapping[str, StatisticShape]
+            The shape of each attribute by name.
         """
-        return ("quantiles_", "references_", "n_quantiles_", "n_features_in_")
+        return {
+            "quantiles_": StatisticShape.PER_QUANTILE_AND_FEATURE,
+            "references_": StatisticShape.PER_QUANTILE,
+            "n_quantiles_": StatisticShape.SCALAR,
+            "n_features_in_": StatisticShape.SCALAR,
+        }
+
+    @override
+    def validate_statistics(
+        self, statistics: Mapping[str, NDArray[np.generic]]
+    ) -> None:
+        """
+        Check that the statistics describe one increasing mapping per feature.
+
+        Parameters
+        ----------
+        statistics : Mapping[str, NDArray[np.generic]]
+            The statistics by attribute name, whose shapes are already checked.
+
+        Raises
+        ------
+        ValueError
+            If the statistics disagree on the number of quantiles, or the quantiles
+            or references are out of order.
+        """
+        quantiles: FloatArray = cast(FloatArray, statistics["quantiles_"])
+        references: FloatArray = cast(FloatArray, statistics["references_"])
+        reference_shape: tuple[int, ...] = references.shape
+        n_quantiles: int = reference_shape[0]
+        if quantiles.shape[0] != n_quantiles or not np.array_equal(
+            statistics["n_quantiles_"], n_quantiles
+        ):
+            raise ValueError(
+                f"Statistics disagree on the number of quantiles: {quantiles.shape[0]}, {n_quantiles}, {statistics['n_quantiles_']}"
+            )
+        if np.less(np.diff(quantiles, axis=0), 0).any():
+            raise ValueError("quantiles_ must not decrease")
+        if np.less_equal(np.diff(references), 0).any():
+            raise ValueError("references_ must increase")
 
     @override
     def build_transformer(self) -> QuantileTransformer:

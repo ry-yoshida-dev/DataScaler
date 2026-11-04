@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import override
 
@@ -12,6 +13,8 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_shape import StatisticShape
+from ..transformers import InvertibleTransformerLike
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -58,29 +61,32 @@ class PowerScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
-            The attribute names, prefixed by their pipeline step.
+        Mapping[str, StatisticShape]
+            The shape of each attribute by name, prefixed by its pipeline step.
         """
-        power: tuple[str, ...] = ("power.lambdas_", "power.n_features_in_")
+        power: dict[str, StatisticShape] = {
+            "power.lambdas_": StatisticShape.PER_FEATURE,
+            "power.n_features_in_": StatisticShape.SCALAR,
+        }
         if not self.is_standardized:
             return power
-        return (
-            *power,
-            "standard.mean_",
-            "standard.var_",
-            "standard.scale_",
-            "standard.n_samples_seen_",
-            "standard.n_features_in_",
-        )
+        return {
+            **power,
+            "standard.mean_": StatisticShape.PER_FEATURE,
+            "standard.var_": StatisticShape.PER_FEATURE,
+            "standard.scale_": StatisticShape.PER_FEATURE,
+            "standard.n_samples_seen_": StatisticShape.SCALAR_OR_PER_FEATURE,
+            "standard.n_features_in_": StatisticShape.SCALAR,
+        }
 
     @override
-    def build_transformer(self) -> Pipeline[np.float64]:
+    def build_transformer(self) -> InvertibleTransformerLike:
         """
         Build an unfitted transformer.
 
@@ -89,10 +95,10 @@ class PowerScalingParameters(ScalingParameters):
 
         Returns
         -------
-        Pipeline[np.float64]
-            The transformer.
+        InvertibleTransformerLike
+            The transformer, a pipeline of the two steps.
         """
-        return Pipeline(
+        pipeline: Pipeline[np.float64] = Pipeline(
             [
                 (
                     "power",
@@ -104,6 +110,7 @@ class PowerScalingParameters(ScalingParameters):
                 ),
             ]
         )
+        return pipeline
 
     @override
     def build_scaler(self) -> InvertibleScaler:

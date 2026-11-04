@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -26,11 +28,15 @@ class FeatureValidator:
         Raises
         ------
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
             If the features are not 2-D, are empty, contain infinity, or contain
             NaN when it is not allowed.
         """
+        if not isinstance(cast(object, X), np.ndarray):
+            raise TypeError(
+                f"X must be a NumPy array, got {type(X).__name__}; convert it with np.asarray"
+            )
         is_numeric: bool = np.issubdtype(X.dtype, np.integer) or np.issubdtype(
             X.dtype, np.floating
         )

@@ -12,6 +12,7 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 | [feature_validator.py](./feature_validator.py) | `FeatureValidator`, runtime checks of feature matrices. |
 | [scaling_kind.py](./scaling_kind.py) | `ScalingKind`, what a strategy does to the values. |
 | [scaling_strategy.py](./scaling_strategy.py) | `ScalingStrategy`, the stable identifier of a strategy in saved scalers. |
+| [statistic_shape.py](./statistic_shape.py) | `StatisticShape`, the array shape of a fitted statistic. |
 | [parameter.py](./parameter.py) | `ScalingParameters`, the abstract base class of configurations. |
 | [parameters/](./parameters/README.md) | Per-strategy parameter classes. |
 | [options/](./options/README.md) | Enums for the fields of parameter classes. |
@@ -24,4 +25,5 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 | [feature_scaling.py](./feature_scaling.py) | `FeatureScaling` enum, a shorthand for strategies with default parameters. |
 | [transformer.py](./transformer.py) | `TransformerLike`, the structural type of wrapped transformers. |
 | [transformers/](./transformers/README.md) | Structural types of transformers with more capabilities. |
+| [pipeline.py](./pipeline.py) | `PipelineLike`, the structural type of a scaling pipeline. |
 | [predictor.py](./predictor.py) | `PredictorLike`, the estimators that a scaling pipeline can end with. |

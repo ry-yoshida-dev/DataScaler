@@ -48,7 +48,7 @@ class InvertibleScaler(Scaler):
         NotFittedError
             If the scaler has not been fitted.
         TypeError
-            If the features are not numeric.
+            If the features are not a numeric NumPy array.
         ValueError
             If the features are invalid or their number differs from fitting.
         """

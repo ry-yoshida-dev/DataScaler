@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import override
 
@@ -9,6 +10,7 @@ from ..parameter import ScalingParameters
 from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_shape import StatisticShape
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,16 +59,39 @@ class StandardScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> tuple[str, ...]:
+    def state_attributes(self) -> Mapping[str, StatisticShape]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        tuple[str, ...]
+        Mapping[str, StatisticShape]
+            The shape of each attribute by name.
+        """
+        return {
+            "mean_": StatisticShape.PER_FEATURE,
+            "var_": StatisticShape.PER_FEATURE,
+            "scale_": StatisticShape.PER_FEATURE,
+            "n_samples_seen_": StatisticShape.SCALAR_OR_PER_FEATURE,
+            "n_features_in_": StatisticShape.SCALAR,
+        }
+
+    @property
+    @override
+    def empty_state_attributes(self) -> frozenset[str]:
+        """
+        Get the state attributes that this configuration leaves empty after fitting.
+
+        Returns
+        -------
+        frozenset[str]
             The attribute names.
         """
-        return ("mean_", "var_", "scale_", "n_samples_seen_", "n_features_in_")
+        if self.is_scaled:
+            return frozenset()
+        if self.is_centered:
+            return frozenset({"var_", "scale_"})
+        return frozenset({"mean_", "var_", "scale_"})
 
     @override
     def build_transformer(self) -> StandardScaler:
