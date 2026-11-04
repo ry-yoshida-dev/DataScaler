@@ -9,6 +9,7 @@ from sklearn.preprocessing import QuantileTransformer
 
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 from ..transformers import InvertibleTransformerLike
 
 
@@ -74,6 +75,19 @@ class QuantileScalingParameters(ScalingParameters):
             raise ValueError("n_quantiles must be at least 2")
         if self.subsample is not None and self.subsample < self.n_quantiles:
             raise ValueError("subsample must not be below n_quantiles")
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.MONOTONIC
 
     @property
     @override

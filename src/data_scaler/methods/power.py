@@ -10,6 +10,7 @@ from sklearn.preprocessing import FunctionTransformer, PowerTransformer, Standar
 
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 from ..transformers import InvertibleTransformerLike
 
 
@@ -44,6 +45,19 @@ class PowerScalingParameters(ScalingParameters):
 
     method: PowerMethod = PowerMethod.YEO_JOHNSON
     is_standardized: bool = True
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.MONOTONIC
 
     @property
     @override

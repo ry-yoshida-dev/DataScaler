@@ -10,6 +10,7 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 |-----------|-------------|
 | [types.py](./types.py) | Type aliases for numeric data and serialized parameters. |
 | [feature_validator.py](./feature_validator.py) | `FeatureValidator`, runtime checks of feature matrices. |
+| [scaling_kind.py](./scaling_kind.py) | `ScalingKind`, what a strategy does to the values. |
 | [parameter.py](./parameter.py) | `ScalingParameters`, the abstract base class of configurations. |
 | [parameter_codec.py](./parameter_codec.py) | `ParameterCodec`, which converts parameters to and from JSON values. |
 | [scaling_configuration.py](./scaling_configuration.py) | `ScalingConfigurationLike`, what a scaler needs from its configuration. |

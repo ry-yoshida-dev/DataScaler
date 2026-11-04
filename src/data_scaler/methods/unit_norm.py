@@ -8,6 +8,7 @@ from sklearn.preprocessing import Normalizer
 
 from ..parameter import ScalingParameters
 from ..scaler import Scaler
+from ..scaling_kind import ScalingKind
 from ..transformers import TransformerLike
 
 
@@ -54,6 +55,19 @@ class UnitNormScalingParameters(ScalingParameters):
     def __post_init__(self) -> None:
         if self.is_nan_allowed:
             raise ValueError("is_nan_allowed is not supported by unit norm scaling")
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.SAMPLE_WISE
 
     @property
     @override

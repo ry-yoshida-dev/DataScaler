@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,21 @@ class StandardScalingParameters(ScalingParameters):
 
     is_centered: bool = True
     is_scaled: bool = True
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.of_linear(
+            is_centered=self.is_centered, is_scaled=self.is_scaled
+        )
 
     @property
     @override

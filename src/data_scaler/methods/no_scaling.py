@@ -7,6 +7,7 @@ from sklearn.preprocessing import FunctionTransformer
 
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 from ..transformers import InvertibleTransformerLike
 
 
@@ -15,6 +16,19 @@ class NoScalingParameters(ScalingParameters):
     """
     Features are used as they are.
     """
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.IDENTITY
 
     @property
     @override

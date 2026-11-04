@@ -19,6 +19,7 @@ from .scaler import Scaler
 from .scaler_loader import ScalerLoader
 from .scaler_state import ScalerState
 from .scaling_configuration import ScalingConfigurationLike
+from .scaling_kind import ScalingKind
 from .transformers import (
     IncrementalTransformerLike,
     InvertibleTransformerLike,
@@ -46,6 +47,7 @@ __all__ = [
     "ScalerLoader",
     "ScalerState",
     "ScalingConfigurationLike",
+    "ScalingKind",
     "ScalingParameters",
     "StandardScalingParameters",
     "TransformerLike",

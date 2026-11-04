@@ -7,6 +7,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 from ..incremental_scaler import IncrementalScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,19 @@ class MinMaxScalingParameters(ScalingParameters):
             raise ValueError(
                 f"feature_range must be increasing, got {self.feature_range}"
             )
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.MONOTONIC if self.is_clipped else ScalingKind.AFFINE
 
     @property
     @override

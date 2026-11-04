@@ -7,6 +7,7 @@ from sklearn.preprocessing import RobustScaler
 
 from ..invertible_scaler import InvertibleScaler
 from ..parameter import ScalingParameters
+from ..scaling_kind import ScalingKind
 from ..transformers import InvertibleTransformerLike
 
 
@@ -46,6 +47,21 @@ class RobustScalingParameters(ScalingParameters):
             raise ValueError(
                 f"quantile_range must be increasing within [0, 100], got {self.quantile_range}"
             )
+
+    @property
+    @override
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return ScalingKind.of_linear(
+            is_centered=self.is_centered, is_scaled=self.is_scaled
+        )
 
     @property
     @override

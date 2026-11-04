@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 
 from .parameter_codec import ParameterCodec
+from .scaling_kind import ScalingKind
 from .transformers import PredictorLike, TransformerLike
 from .types import JsonValue
 
@@ -39,6 +40,18 @@ class ScalingParameters(ABC):
             The values by field name.
         """
         return ParameterCodec.encode(self)
+
+    @property
+    @abstractmethod
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
 
     @property
     @abstractmethod

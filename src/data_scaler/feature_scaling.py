@@ -15,6 +15,7 @@ from .methods import (
 )
 from .parameter import ScalingParameters
 from .scaler import Scaler
+from .scaling_kind import ScalingKind
 from .transformers import PredictorLike, TransformerLike
 
 
@@ -70,6 +71,18 @@ class FeatureScaling(Enum):
                 return RobustScalingParameters()
             case FeatureScaling.UNIT_NORM:
                 return UnitNormScalingParameters()
+
+    @property
+    def kind(self) -> ScalingKind:
+        """
+        Get what this strategy does to the values.
+
+        Returns
+        -------
+        ScalingKind
+            The kind.
+        """
+        return self.parameters.kind
 
     def build_scaler(self) -> Scaler[TransformerLike]:
         """

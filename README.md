@@ -86,6 +86,7 @@ pipeline = RobustScalingParameters().build_pipeline(estimator)
 - Pipelines and `build_estimator` use the scikit-learn transformers directly, without the checks of `Scaler`.
 - `partial_fit` and `inverse_transform` exist only on scalers that support them, so the type checker rejects other uses.
 - `QuantileScalingParameters.n_quantiles` must not exceed the number of training samples, or scikit-learn warns and reduces it.
+- `kind` on `FeatureScaling` and on every parameter class tells what the configured strategy does to the values, as a `ScalingKind`, for callers whose results depend on it.
 - Saved scalers depend on the fitted attributes of scikit-learn, whose meaning could change between major versions.
 
 ## Development
