@@ -112,6 +112,8 @@ class TestParameterValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = MinMaxScalingParameters(feature_range=(float("nan"), 1.0))
         with self.assertRaises(ValueError):
+            _ = MinMaxScalingParameters(feature_range=(0.0, float("inf")))
+        with self.assertRaises(ValueError):
             _ = RobustScalingParameters(quantile_range=(75.0, 25.0))
         with self.assertRaises(ValueError):
             _ = RobustScalingParameters(quantile_range=(-1.0, 50.0))
@@ -123,6 +125,12 @@ class TestParameterValidation(unittest.TestCase):
             _ = QuantileScalingParameters(n_quantiles=100, subsample=10)
         with self.assertRaises(TypeError):
             _ = QuantileScalingParameters(n_quantiles=cast(int, 1.5))
+        with self.assertRaises(TypeError):
+            _ = QuantileScalingParameters(
+                n_quantiles=cast(int, cast(object, np.int64(50)))
+            )
+        with self.assertRaises(ValueError):
+            _ = QuantileScalingParameters(random_state=-1)
 
     def test_unit_norm_rejects_missing_values(self) -> None:
         with self.assertRaises(ValueError):

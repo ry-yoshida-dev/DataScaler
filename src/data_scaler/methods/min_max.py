@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import override
 
@@ -25,7 +26,7 @@ class MinMaxScalingParameters(ScalingParameters):
     Raises
     ------
     ValueError
-        If the lower bound is not below the upper bound.
+        If the bounds are not finite and increasing.
     """
 
     feature_range: tuple[float, float] = (0.0, 1.0)
@@ -33,9 +34,9 @@ class MinMaxScalingParameters(ScalingParameters):
 
     def __post_init__(self) -> None:
         lower, upper = self.feature_range
-        if not lower < upper:
+        if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
             raise ValueError(
-                f"feature_range must be increasing, got {self.feature_range}"
+                f"feature_range must be finite and increasing, got {self.feature_range}"
             )
 
     @property

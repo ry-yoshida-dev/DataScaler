@@ -82,10 +82,13 @@ class Scaler[TransformerT: TransformerLike]:
         TypeError
             If the features are not numeric.
         ValueError
-            If the features are not a valid matrix for this strategy.
+            If the features are not a valid matrix for this strategy, or a feature
+            has no observed value.
         """
         self._n_features = None
         self._validate(X)
+        if self._parameters.is_nan_allowed:
+            FeatureValidator.require_observed_features(X)
         _ = self._estimator.fit(X)
         self._record_fitted(X)
 
@@ -153,19 +156,24 @@ class Scaler[TransformerT: TransformerLike]:
         NotFittedError
             If the scaler has not been fitted.
         """
+        n_features: int = self.n_features
         arrays: dict[str, NDArray[np.generic]] = {}
+        empty_attributes: list[str] = []
         for path in self._parameters.state_attributes:
             value: object = cast(
                 object,
                 getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
             )
-            if value is not None:
+            if value is None:
+                empty_attributes.append(path)
+            else:
                 arrays[path] = np.asarray(value)
         return ScalerState(
             method=type(self._parameters).__name__,
             parameters=self._parameters.encode(),
-            n_features=self.n_features,
+            n_features=n_features,
             arrays=arrays,
+            empty_attributes=tuple(empty_attributes),
         )
 
     def restore_state(self, state: ScalerState) -> None:
@@ -176,11 +184,21 @@ class Scaler[TransformerT: TransformerLike]:
         ----------
         state : ScalerState
             The state, exported from a scaler with the same parameters.
+
+        Raises
+        ------
+        ValueError
+            If the state belongs to another configuration or its attributes differ
+            from what this strategy learns.
         """
+        self._validate_state(state)
         for path, array in state.arrays.items():
             # Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
             value: object = cast(object, array[()])
             setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], value)
+        # scikit-learn tells "fitted without this statistic" from "not fitted" by presence.
+        for path in state.empty_attributes:
+            setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None)
         self._n_features = state.n_features
 
     def save(self, path: Path) -> None:
@@ -214,6 +232,26 @@ class Scaler[TransformerT: TransformerLike]:
             raise ValueError(
                 f"X must have {n_features} features as during fit, got {X.shape[1]}"
             )
+
+    def _validate_state(self, state: ScalerState) -> None:
+        if state.method != type(self._parameters).__name__ or (
+            dict(state.parameters) != self._parameters.encode()
+        ):
+            raise ValueError(
+                f"State of {state.method} does not match the parameters {self._parameters}"
+            )
+        saved: list[str] = [*state.arrays, *state.empty_attributes]
+        if sorted(saved) != sorted(self._parameters.state_attributes):
+            raise ValueError(
+                f"State attributes {sorted(saved)} differ from {sorted(self._parameters.state_attributes)}"
+            )
+        for path, array in state.arrays.items():
+            if path.endswith("n_features_in_") and not np.array_equal(
+                array, state.n_features
+            ):
+                raise ValueError(
+                    f"State {path} disagrees with its {state.n_features} features"
+                )
 
     def _resolve_owner(self, path: str) -> object:
         if "." not in path or not isinstance(self._estimator, Pipeline):

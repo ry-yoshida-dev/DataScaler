@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 from .types import JsonValue
 
 METADATA_KEY: Final[str] = "__metadata__"
-FORMAT_VERSION: Final[int] = 1
+FORMAT_VERSION: Final[int] = 2
 
 
 @dataclass(frozen=True, eq=False)
@@ -31,12 +31,27 @@ class ScalerState:
         The number of features seen during fitting.
     arrays : Mapping[str, NDArray[np.generic]]
         The fitted statistics by attribute path.
+    empty_attributes : tuple[str, ...]
+        The attribute paths that this configuration leaves empty after fitting.
+
+    Raises
+    ------
+    ValueError
+        If the number of features is not positive or a statistic is not numeric.
     """
 
     method: str
     parameters: Mapping[str, JsonValue]
     n_features: int
     arrays: Mapping[str, NDArray[np.generic]]
+    empty_attributes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.n_features < 1:
+            raise ValueError(f"n_features must be positive, got {self.n_features}")
+        for name, array in self.arrays.items():
+            if not np.issubdtype(array.dtype, np.number):
+                raise ValueError(f"{name} must be numeric, got dtype {array.dtype}")
 
     def save(self, path: Path) -> None:
         """
@@ -53,6 +68,7 @@ class ScalerState:
                 "method": self.method,
                 "parameters": dict(self.parameters),
                 "n_features": self.n_features,
+                "empty_attributes": list(self.empty_attributes),
             }
         )
         with path.open("wb") as file:
@@ -83,24 +99,49 @@ class ScalerState:
         ValueError
             If the file is not a scaler state of a supported format version.
         """
-        loaded: NpzFile[np.generic] = cast(
-            NpzFile[np.generic], np.load(path, allow_pickle=False)
+        loaded: NpzFile[np.generic] | NDArray[np.generic] = cast(
+            NpzFile[np.generic] | NDArray[np.generic],
+            np.load(path, allow_pickle=False),
         )
+        if not isinstance(loaded, NpzFile):
+            raise ValueError(f"{path} is not a scaler state")
         with loaded as archive:
             if METADATA_KEY not in archive.files:
                 raise ValueError(f"{path} is not a scaler state")
-            metadata: dict[str, JsonValue] = cast(
-                dict[str, JsonValue], json.loads(str(archive[METADATA_KEY]))
+            metadata: JsonValue = cast(
+                JsonValue, json.loads(str(archive[METADATA_KEY]))
             )
             arrays: dict[str, NDArray[np.generic]] = {
-                name: archive[name] for name in archive.files if name != METADATA_KEY
+                name: np.asarray(archive[name])
+                for name in archive.files
+                if name != METADATA_KEY
             }
-        version: JsonValue = metadata["format_version"]
+        if not isinstance(metadata, dict):
+            raise ValueError(f"{path} is not a scaler state")
+        version: JsonValue = metadata.get("format_version")
         if version != FORMAT_VERSION:
             raise ValueError(f"Unsupported scaler state format version: {version}")
+        method: JsonValue = metadata.get("method")
+        parameters: JsonValue = metadata.get("parameters")
+        n_features: JsonValue = metadata.get("n_features")
+        empty_attributes: JsonValue = metadata.get("empty_attributes")
+        if (
+            not isinstance(method, str)
+            or not isinstance(parameters, dict)
+            or not isinstance(n_features, int)
+            or isinstance(n_features, bool)
+            or not isinstance(empty_attributes, list)
+        ):
+            raise ValueError(f"{path} has invalid scaler state metadata")
+        empty_names: tuple[str, ...] = tuple(
+            name for name in empty_attributes if isinstance(name, str)
+        )
+        if len(empty_names) != len(empty_attributes):
+            raise ValueError(f"{path} has invalid scaler state metadata")
         return ScalerState(
-            method=str(metadata["method"]),
-            parameters=cast(dict[str, JsonValue], metadata["parameters"]),
-            n_features=cast(int, metadata["n_features"]),
+            method=method,
+            parameters=parameters,
+            n_features=n_features,
             arrays=arrays,
+            empty_attributes=empty_names,
         )

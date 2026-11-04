@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,12 +28,14 @@ from data_scaler import (
     RobustScalingParameters,
     Scaler,
     ScalerLoader,
+    ScalerState,
     ScalingParameters,
     StandardScalingParameters,
     TransformerLike,
     UnitNormScalingParameters,
 )
-from data_scaler.types import FloatArray, NumericArray
+from data_scaler.scaler_state import FORMAT_VERSION
+from data_scaler.types import FloatArray, JsonValue, NumericArray
 
 RANDOM: np.random.Generator = np.random.default_rng(0)
 X: NDArray[np.float64] = RANDOM.lognormal(size=(300, 3))
@@ -134,6 +137,24 @@ class TestStrictInputs(unittest.TestCase):
 
 
 class TestMissingValues(unittest.TestCase):
+    def test_fit_rejects_features_without_observed_values(self) -> None:
+        data: NDArray[np.float64] = X.copy()
+        data[:, 1] = np.nan
+        for parameters in (
+            NoScalingParameters(is_nan_allowed=True),
+            StandardScalingParameters(is_nan_allowed=True),
+            MinMaxScalingParameters(is_nan_allowed=True),
+            MaxAbsScalingParameters(is_nan_allowed=True),
+            RobustScalingParameters(is_nan_allowed=True),
+            QuantileScalingParameters(n_quantiles=50, is_nan_allowed=True),
+            PowerScalingParameters(is_nan_allowed=True),
+        ):
+            with (
+                self.subTest(parameters=parameters),
+                self.assertRaisesRegex(ValueError, "observed"),
+            ):
+                parameters.build_scaler().fit(data)
+
     def test_allowed_nan_is_ignored_and_stays_nan(self) -> None:
         data: NDArray[np.float64] = np.array([[1.0], [np.nan], [3.0]])
         scaled: FloatArray = (
@@ -204,6 +225,16 @@ class TestIncremental(unittest.TestCase):
                 )
                 self.assertEqual(incremental.n_features, 3)
 
+    def test_failed_fit_does_not_leak_into_later_batches(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(X)
+        with self.assertRaises(ValueError):
+            scaler.fit(np.array([[np.nan, 1.0, 1.0]]))
+        scaler.partial_fit(X[:10])
+        fresh: IncrementalScaler = StandardScalingParameters().build_scaler()
+        fresh.partial_fit(X[:10])
+        np.testing.assert_array_equal(scaler.transform(UNSEEN), fresh.transform(UNSEEN))
+
     def test_rejects_batches_with_other_features(self) -> None:
         scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
         scaler.partial_fit(X)
@@ -255,6 +286,111 @@ class TestPersistence(unittest.TestCase):
             at_once.fit(X)
             np.testing.assert_allclose(
                 loaded.transform(UNSEEN), at_once.transform(UNSEEN)
+            )
+
+    def test_every_incremental_configuration_continues_learning(self) -> None:
+        for parameters in (
+            StandardScalingParameters(),
+            StandardScalingParameters(is_centered=False),
+            StandardScalingParameters(is_scaled=False),
+            StandardScalingParameters(is_centered=False, is_scaled=False),
+            MinMaxScalingParameters(),
+            MaxAbsScalingParameters(),
+        ):
+            with (
+                self.subTest(parameters=parameters),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                path: Path = Path(directory) / "scaler.npz"
+                first: Scaler[TransformerLike] = parameters.build_scaler()
+                assert isinstance(first, IncrementalScaler)
+                first.partial_fit(X[:100])
+                first.save(path)
+                loaded: Scaler[TransformerLike] = ScalerLoader.load(path)
+                assert isinstance(loaded, IncrementalScaler)
+                loaded.partial_fit(X[100:])
+                at_once: Scaler[TransformerLike] = parameters.build_scaler()
+                at_once.fit(X)
+                np.testing.assert_allclose(
+                    loaded.transform(UNSEEN), at_once.transform(UNSEEN)
+                )
+
+    def test_restore_rejects_the_state_of_another_configuration(self) -> None:
+        source: IncrementalScaler = MinMaxScalingParameters().build_scaler()
+        source.fit(X)
+        for target in (
+            StandardScalingParameters().build_scaler(),
+            MinMaxScalingParameters(is_clipped=True).build_scaler(),
+        ):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                target.restore_state(source.to_state())
+
+    def test_rejects_malformed_states(self) -> None:
+        source: IncrementalScaler = StandardScalingParameters().build_scaler()
+        source.fit(X)
+        state: ScalerState = source.to_state()
+        arrays: dict[str, NDArray[np.generic]] = dict(state.arrays)
+        valid: dict[str, JsonValue] = {
+            "format_version": FORMAT_VERSION,
+            "method": state.method,
+            "parameters": dict(state.parameters),
+            "n_features": state.n_features,
+            "empty_attributes": [],
+        }
+        cases: list[tuple[JsonValue, dict[str, NDArray[np.generic]]]] = [
+            ([1], arrays),
+            ({key: valid[key] for key in valid if key != "format_version"}, arrays),
+            ({key: valid[key] for key in valid if key != "method"}, arrays),
+            ({key: valid[key] for key in valid if key != "n_features"}, arrays),
+            ({**valid, "n_features": "3"}, arrays),
+            ({**valid, "n_features": 0}, arrays),
+            ({**valid, "n_features": 4}, arrays),
+            ({**valid, "empty_attributes": [1]}, arrays),
+            ({**valid, "parameters": {"unknown": 1}}, arrays),
+            ({**valid, "parameters": {"is_centered": "yes"}}, arrays),
+            ({**valid, "method": "Unknown"}, arrays),
+            (valid, {}),
+            (valid, {name: arrays[name] for name in arrays if name != "scale_"}),
+            (valid, {**arrays, "transform": np.zeros(3)}),
+            (valid, {**arrays, "with_mean": np.array(0)}),
+            (valid, {**arrays, "scale_": np.array(["a", "b", "c"])}),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path: Path = Path(directory) / "state.npz"
+            for metadata, entries in cases:
+                with (
+                    self.subTest(metadata=metadata, entries=sorted(entries)),
+                    self.assertRaises(ValueError),
+                ):
+                    with path.open("wb") as file:
+                        np.savez(
+                            file,
+                            allow_pickle=False,
+                            **{"__metadata__": np.array(json.dumps(metadata))},
+                            **entries,
+                        )
+                    _ = ScalerLoader.load(path)
+
+    def test_rejects_a_bare_array_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path: Path = Path(directory) / "array.npy"
+            with path.open("wb") as file:
+                np.save(file, np.zeros(2))
+            with self.assertRaises(ValueError):
+                _ = ScalerLoader.load(path)
+
+    def test_rejects_invalid_parameter_values_in_a_state(self) -> None:
+        source: IncrementalScaler = MinMaxScalingParameters().build_scaler()
+        source.fit(X)
+        state: ScalerState = source.to_state()
+        with self.assertRaises(ValueError):
+            _ = ScalerLoader.from_state(
+                ScalerState(
+                    method=state.method,
+                    parameters={**state.parameters, "feature_range": "ab"},
+                    n_features=state.n_features,
+                    arrays=state.arrays,
+                )
             )
 
     def test_rejects_unrelated_files(self) -> None:

@@ -28,7 +28,9 @@ class IncrementalScaler(InvertibleScaler[IncrementalTransformerLike]):
         """
         if self._n_features is None:
             self._validate(X)
+            # A failed fit may have left statistics behind, which fit discards.
+            _ = self._estimator.fit(X)
         else:
             self._validate_fitted_shape(X)
-        _ = self._estimator.partial_fit(X)
+            _ = self._estimator.partial_fit(X)
         self._record_fitted(X)

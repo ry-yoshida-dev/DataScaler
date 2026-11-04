@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .types import NumericArray
 
@@ -43,3 +44,24 @@ class FeatureValidator:
             raise ValueError("X must not contain infinity")
         if not is_nan_allowed and np.isnan(X).any():
             raise ValueError("X must not contain NaN unless is_nan_allowed is set")
+
+    @staticmethod
+    def require_observed_features(X: NumericArray) -> None:
+        """
+        Check that every feature has a value to learn from.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix with shape (n_samples, n_features).
+
+        Raises
+        ------
+        ValueError
+            If a feature contains only NaN.
+        """
+        unobserved: NDArray[np.intp] = np.flatnonzero(np.isnan(X).all(axis=0))
+        if unobserved.size > 0:
+            raise ValueError(
+                f"Features must have an observed value, got only NaN in {unobserved.tolist()}"
+            )

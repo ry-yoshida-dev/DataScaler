@@ -24,7 +24,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: >-
           uv run --isolated --no-project --python 3.12
-          --with numpy==2.0.*
+          --with numpy==2.2.*
           --with scikit-learn==1.8.*
           --with pytest
           --with-editable .

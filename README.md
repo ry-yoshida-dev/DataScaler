@@ -82,7 +82,7 @@ pipeline = RobustScalingParameters().build_pipeline(estimator)
 ## Notes
 
 - Inputs are never modified, and outputs never share memory with inputs.
-- `Scaler` rejects NaN unless `is_nan_allowed` is set; then NaN marks missing values, which are ignored while learning and stay NaN in the output. Infinity is always rejected.
+- `Scaler` rejects NaN unless `is_nan_allowed` is set; then NaN marks missing values, which are ignored while learning and stay NaN in the output. Infinity is always rejected. `fit` rejects a feature with only NaN, because there is nothing to learn from.
 - Pipelines and `build_estimator` use the scikit-learn transformers directly, without the checks of `Scaler`.
 - `partial_fit` and `inverse_transform` exist only on scalers that support them, so the type checker rejects other uses.
 - `QuantileScalingParameters.n_quantiles` must not exceed the number of training samples, or scikit-learn warns and reduces it.

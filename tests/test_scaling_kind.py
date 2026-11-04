@@ -87,13 +87,14 @@ class TestScalingKind(unittest.TestCase):
     def _observe_kind(original: FloatArray, scaled: FloatArray) -> ScalingKind:
         design: FloatArray = np.column_stack([original, np.ones_like(original)])
         coefficients: FloatArray = np.linalg.lstsq(design, scaled, rcond=None)[0]
-        is_affine: bool = bool(np.allclose(design @ coefficients, scaled))
+        slope: float = coefficients.item(0)
+        intercept: float = coefficients.item(1)
+        fitted: FloatArray = slope * original + intercept
+        is_affine: bool = bool(np.allclose(fitted, scaled))
         if not is_affine:
             order: NDArray[np.intp] = np.argsort(original)
             is_monotonic: bool = bool((np.diff(scaled[order]) >= -1e-9).all())
             return ScalingKind.MONOTONIC if is_monotonic else ScalingKind.SAMPLE_WISE
-        slope: float = coefficients.item(0)
-        intercept: float = coefficients.item(1)
         if not np.isclose(intercept, 0.0, atol=1e-8):
             return ScalingKind.AFFINE
         return (
