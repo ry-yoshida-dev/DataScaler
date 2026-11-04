@@ -50,9 +50,9 @@ class InvertibleScaler(Scaler):
         TypeError
             If the features are not a numeric NumPy array.
         ValueError
-            If the features are invalid or their number differs from fitting.
+            If the features are invalid, their number differs from fitting, or the
+            result cannot be represented, such as a value outside the range that a
+            power transformation can undo.
         """
         self._validate_fitted_shape(X)
-        return self._to_new_float_array(
-            self._invertible_transformer.inverse_transform(X), X
-        )
+        return self._to_output(self._invertible_transformer.inverse_transform(X), X)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -14,7 +13,6 @@ from sklearn.pipeline import Pipeline
 from .feature_validator import FeatureValidator
 from .scaler_state import ScalerState
 from .scaling_configuration import ScalingConfigurationLike
-from .statistic_shape import StatisticShape
 from .transformer import TransformerLike
 from .types import FloatArray, NumericArray
 
@@ -39,6 +37,8 @@ class Scaler:
     ) -> None:
         self._parameters: ScalingConfigurationLike = parameters
         self._transformer: TransformerLike = transformer
+        # The global configuration of scikit-learn could otherwise return DataFrames.
+        _ = self._transformer.set_output(transform="default")
         self._n_features: int | None = None
 
     @property
@@ -76,6 +76,9 @@ class Scaler:
         """
         Learn the statistics of the samples, discarding earlier ones.
 
+        Features rejected before learning leave earlier statistics in place. Once
+        learning fails, the scaler is unfitted.
+
         Parameters
         ----------
         X : NumericArray
@@ -87,11 +90,12 @@ class Scaler:
             If the features are not a numeric NumPy array.
         ValueError
             If the features are not a valid matrix for this strategy, a feature has
-            no observed value, or a statistic overflows.
+            no observed value, or a statistic comes out impossible, such as by
+            overflowing.
         """
-        self._n_features = None
         self._validate(X)
         self._validate_observed(X)
+        self._n_features = None
         _ = self._transformer.fit(X)
         self._record_fitted(X)
 
@@ -116,10 +120,13 @@ class Scaler:
         TypeError
             If the features are not a numeric NumPy array.
         ValueError
-            If the features are invalid or their number differs from fitting.
+            If the features are invalid, their number differs from fitting, or the
+            result cannot be represented.
         """
         self._validate_fitted_shape(X)
-        return self._to_new_float_array(self._transformer.transform(X), X)
+        output: FloatArray = self._to_output(self._transformer.transform(X), X)
+        self._parameters.validate_output(X, output)
+        return output
 
     def fit_transform(self, X: NumericArray) -> FloatArray:
         """
@@ -141,7 +148,8 @@ class Scaler:
             If the features are not a numeric NumPy array.
         ValueError
             If the features are not a valid matrix for this strategy, a feature has
-            no observed value, or a statistic overflows.
+            no observed value, a statistic comes out impossible, or the result cannot
+            be represented.
         """
         self.fit(X)
         return self.transform(X)
@@ -161,16 +169,12 @@ class Scaler:
             If the scaler has not been fitted.
         """
         n_features: int = self.n_features
-        arrays: dict[str, NDArray[np.generic]] = {}
-        empty_attributes: list[str] = []
-        for path in self._parameters.state_attributes:
-            value: object = self._read_statistic(path)
-            if value is None:
-                empty_attributes.append(path)
-            else:
-                array: NDArray[np.generic] = np.array(value)
-                array.setflags(write=False)
-                arrays[path] = array
+        arrays: dict[str, NDArray[np.generic]] = self._read_statistics()
+        for array in arrays.values():
+            array.setflags(write=False)
+        empty_attributes: list[str] = [
+            path for path in self._parameters.state_attributes if path not in arrays
+        ]
         return ScalerState(
             strategy=self._parameters.strategy,
             parameters=self._parameters.encode(),
@@ -205,11 +209,10 @@ class Scaler:
             )
         for path, array in state.arrays.items():
             # A copy keeps this scaler apart from the state. Indexing keeps NumPy scalars, which scikit-learn needs to continue learning.
-            value: object = cast(object, np.array(array)[()])
-            setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], value)
+            self._write_statistic(path, cast(object, np.array(array)[()]))
         # scikit-learn tells "fitted without this statistic" from "not fitted" by presence.
         for path in state.empty_attributes:
-            setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None)
+            self._write_statistic(path, None)
         self._n_features = state.n_features
 
     def save(self, path: Path) -> None:
@@ -229,21 +232,32 @@ class Scaler:
         self.to_state().save(path)
 
     def _record_fitted(self, X: NumericArray) -> None:
-        for path in self._parameters.state_attributes:
-            value: object = self._read_statistic(path)
-            if value is not None and not np.isfinite(np.array(value)).all():
-                # scikit-learn has already overwritten what it knew, so only a new fit recovers.
-                self._n_features = None
-                raise ValueError(
-                    f"Statistic {path} overflowed, because the features are too large to learn from"
-                )
-        self._n_features = X.shape[1]
+        # scikit-learn has already overwritten what it knew, so only a new fit recovers.
+        self._n_features = None
+        n_features: int = cast(int, X.shape[1])
+        self._validate_statistics(self._read_statistics(), n_features)
+        self._n_features = n_features
 
-    def _read_statistic(self, path: str) -> object:
-        return cast(
-            object,
-            getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
-        )
+    def _read_statistics(self) -> dict[str, NDArray[np.generic]]:
+        statistics: dict[str, NDArray[np.generic]] = {}
+        for path in self._parameters.state_attributes:
+            value: object = cast(
+                object,
+                getattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], None),
+            )
+            if value is not None:
+                statistics[path] = np.array(value)
+        return statistics
+
+    def _write_statistic(self, path: str, value: object) -> None:
+        setattr(self._resolve_owner(path), path.rsplit(".", 1)[-1], value)
+
+    def _validate_statistics(
+        self, statistics: dict[str, NDArray[np.generic]], n_features: int
+    ) -> None:
+        for path, array in statistics.items():
+            self._parameters.state_attributes[path].validate(path, array, n_features)
+        self._parameters.validate_statistics(statistics)
 
     def _validate(self, X: NumericArray) -> None:
         FeatureValidator.require_matrix(
@@ -279,27 +293,7 @@ class Scaler:
             raise ValueError(
                 f"State leaves {sorted(state.empty_attributes)} empty, but this configuration leaves {sorted(empty)} empty"
             )
-        shapes: Mapping[str, StatisticShape] = self._parameters.state_attributes
-        for path, array in state.arrays.items():
-            if not shapes[path].matches(array.shape, state.n_features):
-                raise ValueError(
-                    f"State {path} has shape {array.shape}, which does not fit {shapes[path].name} with {state.n_features} features"
-                )
-            if path.endswith("n_features_in_") and not np.array_equal(
-                array, state.n_features
-            ):
-                raise ValueError(
-                    f"State {path} disagrees with its {state.n_features} features"
-                )
-            # scikit-learn replaces zero scales with one, so anything else is damage.
-            if path.endswith("scale_") and not np.greater(array, 0).all():
-                raise ValueError(f"State {path} must be positive")
-            # Only observed features are learned from, so every count is at least one.
-            if path.endswith("n_samples_seen_") and not np.greater(array, 0).all():
-                raise ValueError(f"State {path} must be positive")
-            if path.endswith("var_") and np.less(array, 0).any():
-                raise ValueError(f"State {path} must not be negative")
-        self._parameters.validate_statistics(state.arrays)
+        self._validate_statistics(dict(state.arrays), state.n_features)
 
     def _resolve_owner(self, path: str) -> object:
         if "." not in path or not isinstance(self._transformer, Pipeline):
@@ -307,8 +301,18 @@ class Scaler:
         return self._transformer.named_steps[path.split(".", 1)[0]]
 
     @staticmethod
-    def _to_new_float_array(result: FloatArray, X: NumericArray) -> FloatArray:
+    def _to_output(result: FloatArray, X: NumericArray) -> FloatArray:
         is_floating: bool = np.issubdtype(result.dtype, np.floating)
-        if is_floating and result is not X:
-            return result
-        return np.array(result, dtype=result.dtype if is_floating else np.float64)
+        output: FloatArray = (
+            result
+            if is_floating and result is not X
+            else np.array(result, dtype=result.dtype if is_floating else np.float64)
+        )
+        if np.isfinite(output).all():
+            return output
+        is_new: NDArray[np.bool_] = ~np.isfinite(output) & ~np.isnan(X)
+        if is_new.any():
+            raise ValueError(
+                f"The result is not finite in samples {np.flatnonzero(is_new.any(axis=1))[:5].tolist()}, which the input does not explain"
+            )
+        return output

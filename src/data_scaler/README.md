@@ -13,9 +13,12 @@ Scaling and normalization strategies. Parameter classes configure a strategy and
 | [scaling_kind.py](./scaling_kind.py) | `ScalingKind`, what a strategy does to the values. |
 | [scaling_strategy.py](./scaling_strategy.py) | `ScalingStrategy`, the stable identifier of a strategy in saved scalers. |
 | [statistic_shape.py](./statistic_shape.py) | `StatisticShape`, the array shape of a fitted statistic. |
+| [statistic_constraint.py](./statistic_constraint.py) | `StatisticConstraint`, what the values of a fitted statistic must satisfy. |
+| [statistic_spec.py](./statistic_spec.py) | `StatisticSpec`, the shape and constraint checked after fitting and after loading. |
 | [parameter.py](./parameter.py) | `ScalingParameters`, the abstract base class of configurations. |
 | [parameters/](./parameters/README.md) | Per-strategy parameter classes. |
 | [options/](./options/README.md) | Enums for the fields of parameter classes. |
+| [parameter_validator.py](./parameter_validator.py) | `ParameterValidator`, which checks fields against their annotations. |
 | [parameter_codec.py](./parameter_codec.py) | `ParameterCodec`, which converts parameters to and from JSON values. |
 | [scaling_configuration.py](./scaling_configuration.py) | `ScalingConfigurationLike`, what a scaler needs from its configuration. |
 | [scaler.py](./scaler.py) | `Scaler`, with strict `fit`, `transform`, and `save`. |

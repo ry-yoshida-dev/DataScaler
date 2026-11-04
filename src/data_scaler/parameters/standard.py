@@ -2,15 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import override
+from typing import cast, override
 
+import numpy as np
+from numpy.typing import NDArray
 from sklearn.preprocessing import StandardScaler
 
 from ..parameter import ScalingParameters
 from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_constraint import StatisticConstraint
 from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
+from ..types import FloatArray
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,21 +64,29 @@ class StandardScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name.
         """
         return {
-            "mean_": StatisticShape.PER_FEATURE,
-            "var_": StatisticShape.PER_FEATURE,
-            "scale_": StatisticShape.PER_FEATURE,
-            "n_samples_seen_": StatisticShape.SCALAR_OR_PER_FEATURE,
-            "n_features_in_": StatisticShape.SCALAR,
+            "mean_": StatisticSpec(StatisticShape.PER_FEATURE),
+            "var_": StatisticSpec(
+                StatisticShape.PER_FEATURE, StatisticConstraint.NON_NEGATIVE
+            ),
+            "scale_": StatisticSpec(
+                StatisticShape.PER_FEATURE, StatisticConstraint.POSITIVE
+            ),
+            "n_samples_seen_": StatisticSpec(
+                StatisticShape.SCALAR_OR_PER_FEATURE, StatisticConstraint.COUNT
+            ),
+            "n_features_in_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.FEATURE_COUNT
+            ),
         }
 
     @property
@@ -92,6 +105,31 @@ class StandardScalingParameters(ScalingParameters):
         if self.is_centered:
             return frozenset({"var_", "scale_"})
         return frozenset({"mean_", "var_", "scale_"})
+
+    @override
+    def validate_statistics(
+        self, statistics: Mapping[str, NDArray[np.generic]]
+    ) -> None:
+        """
+        Check that the scale is the standard deviation.
+
+        Parameters
+        ----------
+        statistics : Mapping[str, NDArray[np.generic]]
+            The statistics by attribute name, whose shapes are already checked.
+
+        Raises
+        ------
+        ValueError
+            If the statistics disagree.
+        """
+        if self.is_scaled:
+            self._require_scale(
+                "scale_",
+                cast(FloatArray, statistics["scale_"]),
+                np.sqrt(cast(FloatArray, statistics["var_"])),
+                fallback=1.0,
+            )
 
     @override
     def build_transformer(self) -> StandardScaler:

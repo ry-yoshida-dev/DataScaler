@@ -5,8 +5,7 @@ import unittest
 import numpy as np
 from numpy.typing import NDArray
 
-from data_scaler import FeatureScaling, Scaler
-from data_scaler.types import FloatArray
+from data_scaler import FeatureScaling, FloatArray, Scaler
 
 X: NDArray[np.float64] = np.array(
     [[1.0, -10.0], [2.0, 0.0], [3.0, 10.0], [4.0, 20.0], [100.0, 30.0]]

@@ -3,15 +3,20 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import override
+from typing import cast, override
 
+import numpy as np
+from numpy.typing import NDArray
 from sklearn.preprocessing import MinMaxScaler
 
 from ..parameter import ScalingParameters
 from ..scalers import IncrementalScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_constraint import StatisticConstraint
 from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
+from ..types import FloatArray
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,7 +40,10 @@ class MinMaxScalingParameters(ScalingParameters):
     feature_range: tuple[float, float] = (0.0, 1.0)
     is_clipped: bool = False
 
-    def __post_init__(self) -> None:
+    @override
+    def _validate_values(self) -> None:
+        lower: float
+        upper: float
         lower, upper = self.feature_range
         if not (math.isfinite(lower) and math.isfinite(upper) and lower < upper):
             raise ValueError(
@@ -70,24 +78,66 @@ class MinMaxScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name.
         """
         return {
-            "min_": StatisticShape.PER_FEATURE,
-            "scale_": StatisticShape.PER_FEATURE,
-            "data_min_": StatisticShape.PER_FEATURE,
-            "data_max_": StatisticShape.PER_FEATURE,
-            "data_range_": StatisticShape.PER_FEATURE,
-            "n_samples_seen_": StatisticShape.SCALAR,
-            "n_features_in_": StatisticShape.SCALAR,
+            "data_min_": StatisticSpec(StatisticShape.PER_FEATURE),
+            "data_max_": StatisticSpec(StatisticShape.PER_FEATURE),
+            "data_range_": StatisticSpec(
+                StatisticShape.PER_FEATURE, StatisticConstraint.NON_NEGATIVE
+            ),
+            "scale_": StatisticSpec(
+                StatisticShape.PER_FEATURE, StatisticConstraint.POSITIVE
+            ),
+            "min_": StatisticSpec(StatisticShape.PER_FEATURE),
+            "n_samples_seen_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.COUNT
+            ),
+            "n_features_in_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.FEATURE_COUNT
+            ),
         }
+
+    @override
+    def validate_statistics(
+        self, statistics: Mapping[str, NDArray[np.generic]]
+    ) -> None:
+        """
+        Check that the range, scale, and offset follow from the observed bounds.
+
+        Parameters
+        ----------
+        statistics : Mapping[str, NDArray[np.generic]]
+            The statistics by attribute name, whose shapes are already checked.
+
+        Raises
+        ------
+        ValueError
+            If the statistics disagree.
+        """
+        data_min: FloatArray = cast(FloatArray, statistics["data_min_"])
+        data_max: FloatArray = cast(FloatArray, statistics["data_max_"])
+        data_range: FloatArray = cast(FloatArray, statistics["data_range_"])
+        scale: FloatArray = cast(FloatArray, statistics["scale_"])
+        if np.greater(data_min, data_max).any():
+            raise ValueError("data_min_ must not exceed data_max_")
+        self._require_close("data_range_", data_range, data_max - data_min)
+        lower: float
+        upper: float
+        lower, upper = self.feature_range
+        with np.errstate(divide="ignore", invalid="ignore"):
+            expected_scale: FloatArray = (upper - lower) / data_range
+        self._require_scale("scale_", scale, expected_scale, fallback=upper - lower)
+        self._require_close(
+            "min_", cast(FloatArray, statistics["min_"]), lower - data_min * scale
+        )
 
     @override
     def build_transformer(self) -> MinMaxScaler:

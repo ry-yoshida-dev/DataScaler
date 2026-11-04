@@ -12,6 +12,22 @@ class TransformerLike(Protocol):
     Structural type for scikit-learn style transformers.
     """
 
+    def set_output(self, *, transform: str) -> object:
+        """
+        Choose the container of the output, regardless of the global configuration.
+
+        Parameters
+        ----------
+        transform : str
+            The name of the container.
+
+        Returns
+        -------
+        object
+            The configured transformer.
+        """
+        ...
+
     def fit(self, X: NumericArray) -> object:
         """
         Learn the statistics of the samples.

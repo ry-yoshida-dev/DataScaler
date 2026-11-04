@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from data_scaler import (
     FeatureScaling,
+    FloatArray,
     MinMaxScalingParameters,
     Norm,
     OutputDistribution,
@@ -20,7 +21,6 @@ from data_scaler import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
-from data_scaler.types import FloatArray
 
 N_FEATURES: int = 3
 _generator: np.random.Generator = np.random.default_rng(0)

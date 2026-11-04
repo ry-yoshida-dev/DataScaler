@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Callable
 from dataclasses import fields
 from typing import cast
 
@@ -9,6 +10,7 @@ from numpy.typing import NDArray
 from sklearn.preprocessing import PowerTransformer
 
 from data_scaler import (
+    FloatArray,
     MaxAbsScalingParameters,
     MinMaxScalingParameters,
     Norm,
@@ -22,7 +24,6 @@ from data_scaler import (
     StandardScalingParameters,
     UnitNormScalingParameters,
 )
-from data_scaler.types import FloatArray
 
 RANDOM: np.random.Generator = np.random.default_rng(0)
 SKEWED: NDArray[np.float64] = RANDOM.lognormal(size=(300, 3))
@@ -137,6 +138,54 @@ class TestParameterValidation(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             _ = QuantileScalingParameters(random_state=-1)
+        with self.assertRaises(ValueError):
+            _ = QuantileScalingParameters(random_state=2**32)
+
+    def test_rejects_fields_of_another_type_at_construction(self) -> None:
+        builders: list[Callable[[], ScalingParameters]] = [
+            lambda: StandardScalingParameters(
+                is_centered=cast(bool, cast(object, "no"))
+            ),
+            lambda: StandardScalingParameters(
+                is_nan_allowed=cast(bool, cast(object, 1))
+            ),
+            lambda: PowerScalingParameters(
+                method=cast(PowerMethod, cast(object, "box-cox"))
+            ),
+            lambda: UnitNormScalingParameters(norm=cast(Norm, cast(object, "l1"))),
+            lambda: MinMaxScalingParameters(
+                feature_range=cast(tuple[float, float], cast(object, [0.0, 1.0]))
+            ),
+            lambda: MinMaxScalingParameters(
+                feature_range=cast(tuple[float, float], cast(object, (0.0, 1.0, 2.0)))
+            ),
+            lambda: MinMaxScalingParameters(
+                feature_range=cast(tuple[float, float], cast(object, (False, True)))
+            ),
+            lambda: RobustScalingParameters(
+                quantile_range=cast(tuple[float, float], cast(object, ("a", "b")))
+            ),
+            lambda: MinMaxScalingParameters(
+                feature_range=(
+                    0.0,
+                    cast(float, cast(object, np.float32(1.0))),
+                )
+            ),
+        ]
+        for index, build in enumerate(builders):
+            with self.subTest(index=index), self.assertRaises(TypeError):
+                _ = build()
+
+    def test_rejects_numbers_too_large_for_a_float(self) -> None:
+        with self.assertRaises(ValueError):
+            _ = MinMaxScalingParameters(feature_range=(10**400, 10**401))
+        with self.assertRaises(ValueError):
+            _ = MinMaxScalingParameters(feature_range=(0.0, float("inf")))
+
+    def test_accepts_integers_in_float_fields(self) -> None:
+        self.assertEqual(
+            MinMaxScalingParameters(feature_range=(0, 2)).feature_range, (0, 2)
+        )
 
     def test_unit_norm_rejects_missing_values(self) -> None:
         with self.assertRaises(ValueError):

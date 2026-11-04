@@ -18,6 +18,24 @@ class PredictorLike[PredictionT: np.generic](Protocol):
     prediction types after wrapping.
     """
 
+    def fit(self, X: NumericArray, y: NumericArray | None, /) -> object:
+        """
+        Learn from the scaled features.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The feature matrix.
+        y : NumericArray | None
+            The targets, if the estimator uses them.
+
+        Returns
+        -------
+        object
+            The fitted estimator.
+        """
+        ...
+
     def predict(self, X: NumericArray) -> NDArray[PredictionT]:
         """
         Predict targets.

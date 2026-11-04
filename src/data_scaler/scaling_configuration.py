@@ -10,8 +10,8 @@ from numpy.typing import NDArray
 
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
-from .statistic_shape import StatisticShape
-from .types import JsonValue
+from .statistic_spec import StatisticSpec
+from .types import FloatArray, JsonValue, NumericArray
 
 
 class ScalingConfigurationLike(Protocol):
@@ -61,13 +61,13 @@ class ScalingConfigurationLike(Protocol):
         ...
 
     @property
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name, prefixed by ``step.`` inside a
             pipeline.
         """
@@ -100,6 +100,24 @@ class ScalingConfigurationLike(Protocol):
         ------
         ValueError
             If the statistics cannot come from fitting this strategy.
+        """
+        ...
+
+    def validate_output(self, X: NumericArray, output: FloatArray) -> None:
+        """
+        Check what this strategy requires of its scaled features.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The features before scaling.
+        output : FloatArray
+            The scaled features.
+
+        Raises
+        ------
+        ValueError
+            If the output is wrong without being non-finite.
         """
         ...
 

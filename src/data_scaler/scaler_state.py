@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
+from uuid import uuid4
 from zipfile import BadZipFile
 
 import numpy as np
@@ -67,7 +69,7 @@ class ScalerState:
 
     def save(self, path: Path) -> None:
         """
-        Write the state to a NumPy archive.
+        Write the state to a NumPy archive, replacing the file only on success.
 
         Parameters
         ----------
@@ -84,13 +86,21 @@ class ScalerState:
                 "empty_attributes": list(self.empty_attributes),
             }
         )
-        with path.open("wb") as file:
-            np.savez(
-                file,
-                allow_pickle=False,
-                **{METADATA_KEY: np.array(metadata)},
-                **self.arrays,
-            )
+        # Replacing the file at the end keeps what it held if writing fails.
+        temporary: Path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("xb") as file:
+                np.savez(
+                    file,
+                    allow_pickle=False,
+                    **{METADATA_KEY: np.array(metadata)},
+                    **self.arrays,
+                )
+                file.flush()
+                os.fsync(file.fileno())
+            _ = temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     @staticmethod
     def load(path: Path) -> ScalerState:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast, override
+from typing import Final, cast, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,8 +13,12 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_constraint import StatisticConstraint
 from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
 from ..types import FloatArray
+
+MAX_RANDOM_STATE: Final[int] = 2**32 - 1
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -38,8 +42,6 @@ class QuantileScalingParameters(ScalingParameters):
 
     Raises
     ------
-    TypeError
-        If a count or the seed is not an integer.
     ValueError
         If a count or the seed is out of range.
     """
@@ -49,20 +51,18 @@ class QuantileScalingParameters(ScalingParameters):
     subsample: int | None = 10000
     random_state: int | None = 0
 
-    def __post_init__(self) -> None:
-        for name, value in (
-            ("n_quantiles", self.n_quantiles),
-            ("subsample", self.subsample),
-            ("random_state", self.random_state),
-        ):
-            if value is not None and type(value) is not int:
-                raise TypeError(f"{name} must be an integer, got {value!r}")
+    @override
+    def _validate_values(self) -> None:
         if self.n_quantiles < 2:
             raise ValueError("n_quantiles must be at least 2")
         if self.subsample is not None and self.subsample < self.n_quantiles:
             raise ValueError("subsample must not be below n_quantiles")
-        if self.random_state is not None and self.random_state < 0:
-            raise ValueError("random_state must not be negative")
+        if self.random_state is not None and not (
+            0 <= self.random_state <= MAX_RANDOM_STATE
+        ):
+            raise ValueError(
+                f"random_state must be within [0, {MAX_RANDOM_STATE}], got {self.random_state}"
+            )
 
     @property
     @override
@@ -92,20 +92,24 @@ class QuantileScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name.
         """
         return {
-            "quantiles_": StatisticShape.PER_QUANTILE_AND_FEATURE,
-            "references_": StatisticShape.PER_QUANTILE,
-            "n_quantiles_": StatisticShape.SCALAR,
-            "n_features_in_": StatisticShape.SCALAR,
+            "quantiles_": StatisticSpec(StatisticShape.PER_QUANTILE_AND_FEATURE),
+            "references_": StatisticSpec(StatisticShape.PER_QUANTILE),
+            "n_quantiles_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.COUNT
+            ),
+            "n_features_in_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.FEATURE_COUNT
+            ),
         }
 
     @override
@@ -123,8 +127,9 @@ class QuantileScalingParameters(ScalingParameters):
         Raises
         ------
         ValueError
-            If the statistics disagree on the number of quantiles, or the quantiles
-            or references are out of order.
+            If the statistics disagree on the number of quantiles, there are more
+            quantiles than configured, or the quantiles or references are out of
+            order or range.
         """
         quantiles: FloatArray = cast(FloatArray, statistics["quantiles_"])
         references: FloatArray = cast(FloatArray, statistics["references_"])
@@ -136,10 +141,16 @@ class QuantileScalingParameters(ScalingParameters):
             raise ValueError(
                 f"Statistics disagree on the number of quantiles: {quantiles.shape[0]}, {n_quantiles}, {statistics['n_quantiles_']}"
             )
+        if n_quantiles > self.n_quantiles:
+            raise ValueError(
+                f"Statistics have {n_quantiles} quantiles, above the configured {self.n_quantiles}"
+            )
         if np.less(np.diff(quantiles, axis=0), 0).any():
             raise ValueError("quantiles_ must not decrease")
         if np.less_equal(np.diff(references), 0).any():
             raise ValueError("references_ must increase")
+        if np.less(references, 0).any() or np.greater(references, 1).any():
+            raise ValueError("references_ must be within [0, 1]")
 
     @override
     def build_transformer(self) -> QuantileTransformer:

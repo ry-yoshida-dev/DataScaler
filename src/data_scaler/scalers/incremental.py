@@ -41,8 +41,8 @@ class IncrementalScaler(InvertibleScaler):
             If the features are not a numeric NumPy array.
         ValueError
             If the features are invalid, their number differs from earlier batches,
-            a feature of the batch has no observed value, or a statistic overflows,
-            which also discards what was learned.
+            a feature of the batch has no observed value, or a statistic comes out
+            impossible, such as by overflowing, which also discards what was learned.
         """
         if self._n_features is None:
             self._validate(X)

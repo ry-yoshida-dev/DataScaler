@@ -20,17 +20,23 @@ from .scalers import IncrementalScaler, InvertibleScaler
 from .scaling_configuration import ScalingConfigurationLike
 from .scaling_kind import ScalingKind
 from .scaling_strategy import ScalingStrategy
+from .statistic_constraint import StatisticConstraint
 from .statistic_shape import StatisticShape
+from .statistic_spec import StatisticSpec
 from .transformer import TransformerLike
+from .types import FloatArray, JsonValue, NumericArray
 
 __all__ = [
     "FeatureScaling",
+    "FloatArray",
     "IncrementalScaler",
     "InvertibleScaler",
+    "JsonValue",
     "MaxAbsScalingParameters",
     "MinMaxScalingParameters",
     "NoScalingParameters",
     "Norm",
+    "NumericArray",
     "OutputDistribution",
     "PipelineLike",
     "PowerMethod",
@@ -46,7 +52,9 @@ __all__ = [
     "ScalingParameters",
     "ScalingStrategy",
     "StandardScalingParameters",
+    "StatisticConstraint",
     "StatisticShape",
+    "StatisticSpec",
     "TransformerLike",
     "UnitNormScalingParameters",
 ]

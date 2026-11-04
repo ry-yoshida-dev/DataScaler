@@ -2,6 +2,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 class _Transformer:
+    def set_output(self, *, transform: str) -> object: ...
     def transform(self, X: ArrayLike) -> NDArray[np.floating]: ...
 
 class _Invertible(_Transformer):

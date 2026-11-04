@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import override
 
+import numpy as np
+from numpy.typing import NDArray
 from sklearn.preprocessing import Normalizer
 
 from ..options import Norm
@@ -11,7 +13,10 @@ from ..parameter import ScalingParameters
 from ..scaler import Scaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_constraint import StatisticConstraint
 from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
+from ..types import FloatArray, NumericArray
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -20,7 +25,8 @@ class UnitNormScalingParameters(ScalingParameters):
     Each sample, not each feature, is divided by its length.
 
     Nothing is learned, and the original lengths are lost, so there is no inverse.
-    All-zero samples stay unchanged.
+    Samples of nearly zero length, relative to the precision of their floating point
+    type, stay unchanged, as scikit-learn takes them for all-zero samples.
 
     Attributes
     ----------
@@ -35,7 +41,8 @@ class UnitNormScalingParameters(ScalingParameters):
 
     norm: Norm = Norm.L2
 
-    def __post_init__(self) -> None:
+    @override
+    def _validate_values(self) -> None:
         if self.is_nan_allowed:
             raise ValueError("is_nan_allowed is not supported by unit norm scaling")
 
@@ -67,16 +74,54 @@ class UnitNormScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name.
         """
-        return {"n_features_in_": StatisticShape.SCALAR}
+        return {
+            "n_features_in_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.FEATURE_COUNT
+            )
+        }
+
+    @override
+    def validate_output(self, X: NumericArray, output: FloatArray) -> None:
+        """
+        Check that every sample ended up with unit length or stayed unchanged.
+
+        scikit-learn computes lengths without guarding against overflow, which
+        silently zeroes samples of large magnitude.
+
+        Parameters
+        ----------
+        X : NumericArray
+            The features before scaling.
+        output : FloatArray
+            The scaled features.
+
+        Raises
+        ------
+        ValueError
+            If the length of a sample overflows its floating point type.
+        """
+        lengths: FloatArray
+        match self.norm:
+            case Norm.L1:
+                lengths = np.abs(output).sum(axis=1)
+            case Norm.L2:
+                lengths = np.linalg.norm(output, axis=1)
+            case Norm.MAX:
+                lengths = np.abs(output).max(axis=1)
+        is_unit: NDArray[np.bool_] = self._is_close(lengths, np.ones_like(lengths))
+        if not (is_unit | np.equal(output, X).all(axis=1)).all():
+            raise ValueError(
+                "X must have samples whose length fits the floating point type"
+            )
 
     @override
     def build_transformer(self) -> Normalizer:

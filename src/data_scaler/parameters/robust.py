@@ -10,7 +10,9 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
+from ..statistic_constraint import StatisticConstraint
 from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,7 +37,8 @@ class RobustScalingParameters(ScalingParameters):
     Raises
     ------
     ValueError
-        If the percentiles are not increasing within [0, 100].
+        If the percentiles are not increasing within [0, 100], or unit variance is
+        requested with a percentile of 0 or 100, whose normal quantile is infinite.
     """
 
     is_centered: bool = True
@@ -43,11 +46,22 @@ class RobustScalingParameters(ScalingParameters):
     quantile_range: tuple[float, float] = (25.0, 75.0)
     is_unit_variance: bool = False
 
-    def __post_init__(self) -> None:
+    @override
+    def _validate_values(self) -> None:
+        lower: float
+        upper: float
         lower, upper = self.quantile_range
         if not 0.0 <= lower < upper <= 100.0:
             raise ValueError(
                 f"quantile_range must be increasing within [0, 100], got {self.quantile_range}"
+            )
+        if (
+            self.is_scaled
+            and self.is_unit_variance
+            and (lower == 0.0 or upper == 100.0)
+        ):
+            raise ValueError(
+                f"is_unit_variance needs a quantile_range within (0, 100), got {self.quantile_range}"
             )
 
     @property
@@ -80,19 +94,23 @@ class RobustScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             The shape of each attribute by name.
         """
         return {
-            "center_": StatisticShape.PER_FEATURE,
-            "scale_": StatisticShape.PER_FEATURE,
-            "n_features_in_": StatisticShape.SCALAR,
+            "center_": StatisticSpec(StatisticShape.PER_FEATURE),
+            "scale_": StatisticSpec(
+                StatisticShape.PER_FEATURE, StatisticConstraint.POSITIVE
+            ),
+            "n_features_in_": StatisticSpec(
+                StatisticShape.SCALAR, StatisticConstraint.FEATURE_COUNT
+            ),
         }
 
     @property

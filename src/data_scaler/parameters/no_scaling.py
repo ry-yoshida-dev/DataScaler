@@ -10,7 +10,7 @@ from ..parameter import ScalingParameters
 from ..scalers import InvertibleScaler
 from ..scaling_kind import ScalingKind
 from ..scaling_strategy import ScalingStrategy
-from ..statistic_shape import StatisticShape
+from ..statistic_spec import StatisticSpec
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,13 +47,13 @@ class NoScalingParameters(ScalingParameters):
 
     @property
     @override
-    def state_attributes(self) -> Mapping[str, StatisticShape]:
+    def state_attributes(self) -> Mapping[str, StatisticSpec]:
         """
         Get the fitted attributes that define a fitted scaler.
 
         Returns
         -------
-        Mapping[str, StatisticShape]
+        Mapping[str, StatisticSpec]
             No attributes, because nothing is learned.
         """
         return {}

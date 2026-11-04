@@ -46,9 +46,11 @@ class FeatureValidator:
             raise ValueError(f"X must be 2-D, got {X.ndim} dimensions")
         if X.size == 0:
             raise ValueError(f"X must not be empty, got shape {X.shape}")
+        if np.isfinite(X).all():
+            return
         if np.isinf(X).any():
             raise ValueError("X must not contain infinity")
-        if not is_nan_allowed and np.isnan(X).any():
+        if not is_nan_allowed:
             raise ValueError("X must not contain NaN unless is_nan_allowed is set")
 
     @staticmethod

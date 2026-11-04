@@ -5,24 +5,30 @@ import tempfile
 import unittest
 import warnings
 import zipfile
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
+from unittest import mock
 
 import numpy as np
 from numpy.typing import NDArray
+from sklearn import config_context
 from sklearn.base import clone
 from sklearn.ensemble import IsolationForest
 from sklearn.exceptions import NotFittedError
 
 from data_scaler import (
     FeatureScaling,
+    FloatArray,
     IncrementalScaler,
     InvertibleScaler,
+    JsonValue,
     MaxAbsScalingParameters,
     MinMaxScalingParameters,
     Norm,
     NoScalingParameters,
+    NumericArray,
     OutputDistribution,
     PipelineLike,
     PowerMethod,
@@ -39,7 +45,6 @@ from data_scaler import (
     UnitNormScalingParameters,
 )
 from data_scaler.scaler_state import FORMAT_VERSION
-from data_scaler.types import FloatArray, JsonValue, NumericArray
 
 RANDOM: np.random.Generator = np.random.default_rng(0)
 X: NDArray[np.float64] = RANDOM.lognormal(size=(300, 3))
@@ -98,11 +103,21 @@ class TestStrictInputs(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "3 features"):
                     _ = scaler.transform(np.ones((2, 4)))
 
-    def test_failed_fit_leaves_the_scaler_unfitted(self) -> None:
+    def test_rejected_fit_keeps_the_fitted_statistics(self) -> None:
         scaler: Scaler = StandardScalingParameters().build_scaler()
         scaler.fit(X)
+        expected: FloatArray = scaler.transform(UNSEEN)
         with self.assertRaises(ValueError):
             scaler.fit(np.array([[np.nan, 1.0]]))
+        np.testing.assert_array_equal(scaler.transform(UNSEEN), expected)
+
+    def test_failed_learning_leaves_the_scaler_unfitted(self) -> None:
+        scaler: Scaler = PowerScalingParameters(
+            method=PowerMethod.BOX_COX
+        ).build_scaler()
+        scaler.fit(X)
+        with self.assertRaises(ValueError):
+            scaler.fit(-X)
         with self.assertRaises(NotFittedError):
             _ = scaler.transform(X)
 
@@ -239,8 +254,12 @@ class TestIncremental(unittest.TestCase):
     def test_failed_fit_does_not_leak_into_later_batches(self) -> None:
         scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
         scaler.fit(X)
-        with self.assertRaises(ValueError):
-            scaler.fit(np.array([[np.nan, 1.0, 1.0]]))
+        with (
+            warnings.catch_warnings(),
+            self.assertRaises(ValueError),
+        ):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            scaler.fit(np.array([[1.7e308, 1.0, 1.0], [-1.7e308, 2.0, 2.0]]))
         scaler.partial_fit(X[:10])
         fresh: IncrementalScaler = StandardScalingParameters().build_scaler()
         fresh.partial_fit(X[:10])
@@ -471,10 +490,20 @@ class TestPersistence(unittest.TestCase):
         source: IncrementalScaler = MinMaxScalingParameters().build_scaler()
         source.fit(X)
         state: ScalerState = source.to_state()
-        with self.assertRaises(ValueError):
-            _ = ScalerLoader.from_state(
-                replace(state, parameters={**state.parameters, "feature_range": "ab"})
-            )
+        values: list[JsonValue] = [
+            "ab",
+            [0.0],
+            [0.0, 1.0, 2.0],
+            [[0.0], 1.0],
+            [10**400, 10**401],
+        ]
+        for value in values:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                _ = ScalerLoader.from_state(
+                    replace(
+                        state, parameters={**state.parameters, "feature_range": value}
+                    )
+                )
 
     def test_rejects_damaged_files(self) -> None:
         source: IncrementalScaler = StandardScalingParameters().build_scaler()
@@ -689,6 +718,169 @@ class TestPersistence(unittest.TestCase):
                 np.savez(file, __metadata__=np.array([{"code": 1}], dtype=object))
             with self.assertRaises(ValueError):
                 _ = ScalerLoader.load(path)
+
+
+class TestImpossibleStatistics(unittest.TestCase):
+    def test_every_configuration_round_trips_at_extreme_magnitudes(self) -> None:
+        for parameters in ALL_METHODS:
+            for magnitude in (1e-150, 1e150):
+                with (
+                    self.subTest(parameters=parameters, magnitude=magnitude),
+                    warnings.catch_warnings(),
+                ):
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    data: NDArray[np.float64] = X * magnitude
+                    scaler: Scaler = parameters.build_scaler()
+                    try:
+                        scaler.fit(data)
+                    except ValueError:
+                        # Refusing to learn is fine, but learning promises a usable state.
+                        continue
+                    _ = ScalerLoader.from_state(scaler.to_state())
+
+    def test_robust_rejects_unit_variance_with_infinite_quantiles(self) -> None:
+        for quantile_range in ((0.0, 100.0), (0.0, 50.0), (50.0, 100.0)):
+            with self.subTest(quantile_range=quantile_range):
+                with self.assertRaises(ValueError):
+                    _ = RobustScalingParameters(
+                        quantile_range=quantile_range, is_unit_variance=True
+                    )
+                _ = RobustScalingParameters(quantile_range=quantile_range)
+                _ = RobustScalingParameters(
+                    quantile_range=quantile_range,
+                    is_unit_variance=True,
+                    is_scaled=False,
+                )
+
+    def test_fit_rejects_scales_that_underflow(self) -> None:
+        scaler: Scaler = MinMaxScalingParameters(
+            feature_range=(0.0, 1e-300)
+        ).build_scaler()
+        with self.assertRaisesRegex(ValueError, "positive"):
+            scaler.fit(np.array([[-5e307], [5e307]]))
+        with self.assertRaises(NotFittedError):
+            _ = scaler.transform(np.array([[1.0]]))
+
+    def test_load_rejects_statistics_that_disagree(self) -> None:
+        cases: list[tuple[ScalingParameters, str, NDArray[np.generic]]] = [
+            (MinMaxScalingParameters(), "data_min_", np.full(3, 9e9)),
+            (MinMaxScalingParameters(), "data_range_", np.full(3, -1.0)),
+            (MinMaxScalingParameters(), "data_range_", np.full(3, 1e9)),
+            (MinMaxScalingParameters(), "scale_", np.full(3, 1e9)),
+            (MinMaxScalingParameters(), "min_", np.full(3, 1e9)),
+            (MaxAbsScalingParameters(), "max_abs_", np.full(3, -1.0)),
+            (MaxAbsScalingParameters(), "scale_", np.full(3, 1e9)),
+            (StandardScalingParameters(), "scale_", np.full(3, 1e9)),
+            (StandardScalingParameters(), "n_samples_seen_", np.array(1.5)),
+            (StandardScalingParameters(), "n_features_in_", np.array(3.0)),
+            (PowerScalingParameters(), "standard.scale_", np.full(3, 1e9)),
+            (QuantileScalingParameters(n_quantiles=10), "references_", np.arange(10.0)),
+        ]
+        for parameters, name, array in cases:
+            with self.subTest(parameters=parameters, name=name):
+                scaler: Scaler = parameters.build_scaler()
+                scaler.fit(X)
+                state: ScalerState = scaler.to_state()
+                with self.assertRaises(ValueError):
+                    _ = ScalerLoader.from_state(
+                        replace(state, arrays={**state.arrays, name: array})
+                    )
+
+    def test_load_rejects_more_quantiles_than_configured(self) -> None:
+        scaler: Scaler = QuantileScalingParameters(n_quantiles=10).build_scaler()
+        scaler.fit(X)
+        state: ScalerState = scaler.to_state()
+        smaller: dict[str, JsonValue] = {**state.parameters, "n_quantiles": 5}
+        with self.assertRaisesRegex(ValueError, "configured"):
+            _ = ScalerLoader.from_state(replace(state, parameters=smaller))
+
+    def test_quantile_subsample_without_observed_values_is_rejected(self) -> None:
+        sparse: NDArray[np.float64] = np.full((20000, 1), np.nan)
+        sparse[-1, 0] = 1.0
+        scaler: Scaler = QuantileScalingParameters(
+            n_quantiles=10, subsample=1000, is_nan_allowed=True
+        ).build_scaler()
+        with warnings.catch_warnings(), self.assertRaisesRegex(ValueError, "subsample"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            scaler.fit(sparse)
+
+
+class TestOutputs(unittest.TestCase):
+    def test_inverse_rejects_values_outside_the_invertible_range(self) -> None:
+        scaler: InvertibleScaler = PowerScalingParameters().build_scaler()
+        skewed: NDArray[np.float64] = np.random.default_rng(1).lognormal(
+            sigma=1.5, size=(1000, 1)
+        )
+        scaler.fit(skewed)
+        with warnings.catch_warnings(), self.assertRaisesRegex(ValueError, "finite"):
+            warnings.simplefilter("ignore")
+            _ = scaler.inverse_transform(np.array([[20.0]]))
+
+    def test_inverse_rejects_overflow(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(np.array([[0.0], [1e30]], dtype=np.float32))
+        with warnings.catch_warnings(), self.assertRaisesRegex(ValueError, "finite"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            _ = scaler.inverse_transform(np.array([[1e10]], dtype=np.float32))
+
+    def test_allowed_nan_does_not_count_as_a_new_non_finite_value(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters(
+            is_nan_allowed=True
+        ).build_scaler()
+        scaler.fit(np.array([[1.0], [2.0]]))
+        self.assertTrue(np.isnan(scaler.transform(np.array([[np.nan]]))).all())
+
+    def test_unit_norm_rejects_samples_of_extreme_magnitude(self) -> None:
+        for norm, values in (
+            (Norm.L2, (1e200, 1e200)),
+            (Norm.L1, (1.7e308, 1.7e308)),
+        ):
+            with (
+                self.subTest(norm=norm, values=values),
+                warnings.catch_warnings(),
+                self.assertRaisesRegex(ValueError, "length"),
+            ):
+                warnings.simplefilter("ignore", RuntimeWarning)
+                scaler: Scaler = UnitNormScalingParameters(norm=norm).build_scaler()
+                scaler.fit(np.ones((2, 2)))
+                _ = scaler.transform(np.array([values]))
+
+    def test_unit_norm_keeps_samples_of_nearly_zero_length(self) -> None:
+        for norm in Norm:
+            for value in (0.0, 1e-200, 1e-17):
+                with self.subTest(norm=norm, value=value):
+                    scaler: Scaler = UnitNormScalingParameters(norm=norm).build_scaler()
+                    tiny: NDArray[np.float64] = np.full((1, 2), value)
+                    np.testing.assert_array_equal(scaler.fit_transform(tiny), tiny)
+
+    def test_ignores_the_global_output_configuration(self) -> None:
+        for parameters in ALL_METHODS:
+            with (
+                self.subTest(parameters=parameters),
+                config_context(transform_output="pandas"),
+            ):
+                scaled: FloatArray = parameters.build_scaler().fit_transform(X)
+                self.assertIs(type(scaled), np.ndarray)
+
+
+class TestAtomicSave(unittest.TestCase):
+    def test_failed_save_keeps_the_existing_file_and_no_temporary(self) -> None:
+        scaler: IncrementalScaler = StandardScalingParameters().build_scaler()
+        scaler.fit(X)
+        with tempfile.TemporaryDirectory() as directory:
+            path: Path = Path(directory) / "scaler.npz"
+            scaler.save(path)
+            content: bytes = path.read_bytes()
+            fail: Callable[..., None] = mock.Mock(side_effect=OSError("disk full"))
+            with (
+                mock.patch("data_scaler.scaler_state.np.savez", fail),
+                self.assertRaises(OSError),
+            ):
+                scaler.save(path)
+            self.assertEqual(path.read_bytes(), content)
+            self.assertEqual(
+                [entry.name for entry in Path(directory).iterdir()], [path.name]
+            )
 
 
 class TestScikitLearnInterop(unittest.TestCase):
